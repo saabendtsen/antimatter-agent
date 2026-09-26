@@ -61,8 +61,8 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
   let session;
   const tools = [
     {
-      name: 'browser', label: 'Browser', description: 'Inspect the visible game page, capture a screenshot if your model accepts images, or click a numbered visible control. Inspect again after the page changes.',
-      parameters: Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('screenshot'), Type.Literal('click'), Type.Literal('back'), Type.Literal('home')]), index: Type.Optional(Type.Integer({ minimum: 0 })) }),
+      name: 'browser', label: 'Browser', description: 'Inspect the visible game page, capture a screenshot if your model accepts images, scroll, navigate, or click a numbered visible control. Inspect again after the page changes.',
+      parameters: Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('screenshot'), Type.Literal('click'), Type.Literal('scroll'), Type.Literal('back'), Type.Literal('home')]), index: Type.Optional(Type.Integer({ minimum: 0 })), direction: Type.Optional(Type.Union([Type.Literal('up'), Type.Literal('down')])) }),
       execute: async (_id, params) => {
         if (finished) return result({ error: 'Round already finished' });
         if (++toolCount > ROUND_LIMITS.toolCalls) return result({ error: 'Tool budget exhausted; call finish_round now' });
@@ -78,6 +78,7 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
             ], details: {} };
           }
           const observation = params.action === 'click' ? await browser.click(params.index)
+            : params.action === 'scroll' ? await browser.scroll(params.direction ?? 'down')
             : params.action === 'back' ? (await browser.back(), await browser.observe())
             : params.action === 'home' ? (await browser.home(), await browser.observe())
             : await browser.observe();

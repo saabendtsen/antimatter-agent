@@ -31,23 +31,35 @@ export class GameBrowser {
     if (!this.page.url().startsWith(GAME_URL)) await this.home();
     await this.page.waitForLoadState('domcontentloaded');
     await this.page.waitForFunction(() => document.body?.innerText?.includes('antimatter'), undefined, { timeout: 20000 });
+    await this.page.locator('#loading').waitFor({ state: 'hidden', timeout: 20000 });
   }
 
-  async home() { await this.page.goto(GAME_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }); }
+  async home() {
+    await this.page.goto(GAME_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await this.page.locator('#loading').waitFor({ state: 'hidden', timeout: 20000 });
+  }
   async back() {
     await this.page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 });
     if (!this.page.url().startsWith(GAME_URL)) await this.home();
+    else await this.page.locator('#loading').waitFor({ state: 'hidden', timeout: 20000 });
   }
 
   async controls() {
     return this.page.locator(CONTROL_SELECTOR).evaluateAll(elements => elements
-      .filter(el => {
+      .map((el, domIndex) => ({ el, domIndex }))
+      .filter(({ el }) => {
         const style = getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
+        if (style.display === 'none' || style.visibility === 'hidden' || !el.getClientRects().length) return false;
+        const rect = el.getBoundingClientRect();
+        const x = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2));
+        const y = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2));
+        if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= innerWidth || rect.top >= innerHeight) return false;
+        const target = document.elementFromPoint(x, y);
+        return target === el || el.contains(target);
       })
       .slice(0, 180)
-      .map((el, index) => ({
-        index,
+      .map(({ el, domIndex }, index) => ({
+        index, domIndex,
         label: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || el.value || '').trim().replace(/\s+/g, ' ').slice(0, 140),
         disabled: Boolean(el.disabled || el.getAttribute('aria-disabled') === 'true'),
         kind: el.tagName.toLowerCase(),
@@ -70,15 +82,22 @@ export class GameBrowser {
     const controls = await this.controls();
     const control = controls[index];
     if (!control || control.disabled) throw new Error('Control missing or disabled; inspect the page again');
-    const locator = this.page.locator(CONTROL_SELECTOR).filter({ visible: true }).nth(index);
+    const locator = this.page.locator(CONTROL_SELECTOR).nth(control.domIndex);
     const href = await locator.getAttribute('href');
     if (href && !new URL(href, this.page.url()).href.startsWith(GAME_URL)) throw new Error('Off-game link blocked');
-    await locator.click({ timeout: 8000 });
+    await locator.click({ timeout: 4000 });
     await this.page.waitForTimeout(350);
     if (!this.page.url().startsWith(GAME_URL)) {
       await this.home();
       throw new Error('Off-game navigation blocked');
     }
+    return this.observe();
+  }
+
+  async scroll(direction) {
+    await this.page.mouse.move(1200, 650);
+    await this.page.mouse.wheel(0, direction === 'up' ? -650 : 650);
+    await this.page.waitForTimeout(250);
     return this.observe();
   }
 
