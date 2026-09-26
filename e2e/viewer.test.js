@@ -17,7 +17,8 @@ test('public viewer renders current state and treats player text as text', async
           current: { run: 2, round: 4, summary: malicious, antimatter: '10 K', production: '20', pageText: 'Visible game state', screenshot: null },
           runs: [{ number: 1, status: 'complete', rounds: 30, inheritedHandoff: '',
             retrospective: { inheritedAssessment: 'none', reason: 'First run', handoff: 'Try higher dimensions.' },
-            decisions: [{ at: '2026-09-26T19:00:00Z', round: 1, summary: malicious }] }],
+            decisions: [{ at: '2026-09-26T19:00:00Z', round: 1, summary: malicious,
+              appliedWakeSeconds: 0, contextUsage: { peakTokens: 30000, contextWindow: 120000, peakPercent: 25, ceilingReached: false } }] }],
         } });
       }
       return route.fulfill({ status: 200, contentType: 'text/html', body: html });
@@ -27,6 +28,8 @@ test('public viewer renders current state and treats player text as text', async
     assert.equal(await page.locator('#antimatter').innerText(), '10 K');
     assert.equal(await page.locator('#production').innerText(), '20');
     assert.equal(await page.locator('#decision').innerText(), malicious);
+    await page.getByText('Decisions (1)').click();
+    assert.match(await page.locator('.run li .muted').textContent(), /Peak context: .*tokens \(25%\) · next round immediate/);
     assert.equal(await page.locator('img[src="x"]').count(), 0);
     assert.equal(await page.evaluate(() => window.__injected === true), false);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);

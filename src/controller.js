@@ -58,7 +58,9 @@ function publicHistory(control) {
     } : null,
     decisions: readEvents(eventsFile(index))
       .filter(e => e.type === 'round_end')
-      .map(e => ({ at: e.at, round: e.round, summary: safePublicText(e.summary, 1000), nextWakeSeconds: e.nextWakeSeconds, incomplete: Boolean(e.incomplete) })),
+      .map(e => ({ at: e.at, round: e.round, summary: safePublicText(e.summary, 1000),
+        requestedWakeSeconds: e.nextWakeSeconds, appliedWakeSeconds: e.appliedWakeSeconds,
+        contextUsage: e.contextUsage ?? null, incomplete: Boolean(e.incomplete) })),
   }));
 }
 
@@ -90,7 +92,9 @@ function runEvidence(index, memory) {
     }
     if (event.type === 'round_end') {
       item.decision = safePublicText(event.summary, 500);
-      item.waitSeconds = event.nextWakeSeconds;
+      item.requestedWaitSeconds = event.nextWakeSeconds;
+      item.appliedWaitSeconds = event.appliedWakeSeconds;
+      item.contextUsage = event.contextUsage;
       item.incomplete = Boolean(event.incomplete);
     }
     if (['browser_error', 'model_error', 'harness_error', 'game_checkpoint_error'].includes(event.type)) {
@@ -138,15 +142,16 @@ async function executeRun(control, index) {
       let outcome;
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
-          round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds),
+          round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds), immediateNextRound: MODE === 'prepilot',
           onEvent: event => log(index, { round: number, ...event }) });
       } catch (error) {
         outcome = { summary: `Harness error: ${error.message}`, nextWakeSeconds: 60, incomplete: true };
         log(index, { type: 'harness_error', round: number, message: error.stack ?? error.message });
       }
-      run.nextWakeAt = new Date(Date.now() + outcome.nextWakeSeconds * 1000).toISOString();
+      const appliedWakeSeconds = MODE === 'prepilot' ? 0 : outcome.nextWakeSeconds;
+      run.nextWakeAt = appliedWakeSeconds ? new Date(Date.now() + appliedWakeSeconds * 1000).toISOString() : null;
       run.consecutiveFailures = outcome.incomplete ? (run.consecutiveFailures ?? 0) + 1 : 0;
-      log(index, { type: 'round_end', round: number, ...outcome });
+      log(index, { type: 'round_end', round: number, ...outcome, appliedWakeSeconds });
       try { await browser.checkpoint(); log(index, { type: 'game_checkpoint', round: number }); }
       catch (error) { log(index, { type: 'game_checkpoint_error', round: number, message: error.message }); }
       let pageText = '';

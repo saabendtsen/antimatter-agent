@@ -76,7 +76,13 @@
         const item = document.createElement('li');
         const time = document.createElement('time'); time.textContent = `${new Date(decision.at).toLocaleString()} · round ${decision.round}`;
         const body = document.createElement('div'); body.textContent = decision.summary;
-        item.append(time, body); list.append(item);
+        const metrics = document.createElement('div'); metrics.className = 'muted';
+        const usage = decision.contextUsage;
+        metrics.textContent = usage?.peakTokens != null && usage?.contextWindow
+          ? `Peak context: ${usage.peakTokens.toLocaleString()} / ${usage.contextWindow.toLocaleString()} tokens (${usage.peakPercent}%)${usage.ceilingReached ? ' · action ceiling reached' : ''}`
+          : 'Peak context: unavailable';
+        if (decision.appliedWakeSeconds === 0) metrics.textContent += ' · next round immediate';
+        item.append(time, body, metrics); list.append(item);
       }
       details.append(list); section.append(details); return section;
     }

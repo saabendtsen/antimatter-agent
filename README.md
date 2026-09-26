@@ -4,7 +4,7 @@ A local-model experiment for playing [Antimatter Dimensions](https://ivark.githu
 
 The model uses Pi with only three tools: a Playwright-backed game browser, bounded warm/cold memory, and a round-finishing decision. Each round has a fresh agent session. A playthrough keeps its game save and notes. A successor playthrough receives only a handoff of up to 150 words.
 
-A round can contain a sequence of up to 12 browser actions and 30 browser/memory tool calls. The model normally ends it by calling `finish_round` and choosing a wake time. An eight-minute wall cap prevents a stalled round from consuming the whole playthrough. Pi compaction is disabled inside these fresh sessions; the configured local endpoint currently offers about 120,000 context tokens, while the automatically loaded warm note is limited to 2,200 characters.
+A round can contain a sequence of up to 12 browser actions and 30 browser/memory tool calls. The model normally ends it by calling `finish_round` and choosing a wake time. An eight-minute wall cap prevents a stalled round from consuming the whole playthrough. Pi compaction is disabled inside these fresh sessions; the configured local endpoint currently offers about 120,000 context tokens, while the automatically loaded warm note is limited to 2,200 characters. At 70% estimated context occupancy, the harness stops browser actions and note retrieval but still permits note writes and `finish_round`. Each round records its peak estimated context tokens and percentage of the configured window.
 
 The browser tool exposes visible page text, controls, navigation, clicks, and screenshots. The current text-only local model uses text and controls; screenshot results are available when the configured model accepts images. The separate public viewer always receives screenshots.
 
@@ -21,7 +21,7 @@ npm run smoke
 npm start
 ```
 
-`npm start` runs the three-playthrough pre-pilot. Each playthrough stops at 30 rounds or one hour. The controller keeps its state in ignored `state/prepilot/`; restarting it resumes the same playthrough and browser profile. The game browser stays open between rounds. Use `node src/controller.js --pilot` only after reviewing the pre-pilot; the pilot uses a separate state directory and a 24-hour limit.
+`npm start` runs the three-playthrough pre-pilot. Each playthrough stops at 30 rounds or one hour. The controller keeps its state in ignored `state/prepilot/`; restarting it resumes the same playthrough and browser profile. The game browser stays open between rounds. During the pre-pilot, rounds start immediately after the prior round's checkpoint; the model's requested wake is logged but not applied. Use `node src/controller.js --pilot` only after reviewing the pre-pilot; the pilot uses a separate state directory, applies the model's requested wake time, and has a 24-hour limit.
 
 The run history stays under `state/`. `publication/latest.json` and `publication/screen.png` are the reduced public view. Start the publisher separately after the server viewer is deployed:
 

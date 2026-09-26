@@ -7,7 +7,7 @@
     "start": "node src/controller.js",
     "smoke": "node scripts/smoke.js",
     "publish": "node src/publisher.js",
-    "test": "node --test test/memory.test.js test/retrospective.test.js",
+    "test": "node --test test/*.test.js",
     "test:e2e": "node --test e2e/*.test.js"
   },
   "dependencies": {
