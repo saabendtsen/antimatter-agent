@@ -160,6 +160,20 @@ test('viewer becomes stale while the page stays open without new data', () => wi
   assert.match(await page.locator('#freshness').innerText(), /Data updated 22 min ago/);
 }));
 
+test('soak viewer labels the mode and stays live through a planned wait', () => withBrowser(async browser => {
+  const data = snapshot({ mode: 'soak', updatedAt: new Date(NOW - 16 * 60 * 1000).toISOString() });
+  data.runs = [data.runs[1]];
+  data.runs[0].number = 1;
+  data.current.run = 1;
+  data.current.nextWakeAt = new Date(NOW - 6 * 60 * 1000).toISOString();
+  const { page } = await openViewer(browser, MOBILE, () => ({ json: data }));
+  await page.locator('#connection[data-state="live"]').waitFor();
+  assert.equal(await page.locator('#progress').innerText(), '4-hour soak · run 1 of 1 · round 4');
+  assert.match(await page.locator('.run[data-run="1"]').innerText(), /4 rounds/);
+  await page.clock.fastForward(10 * 60 * 1000);
+  await page.locator('#connection[data-state="stale"]').waitFor();
+}));
+
 test('viewer keeps last data visible and reports offline when fetches fail, then recovers', () => withBrowser(async browser => {
   const { page, state } = await openViewer(browser, MOBILE, () => ({ json: snapshot() }), true);
   await page.locator('#connection[data-state="live"]').waitFor();

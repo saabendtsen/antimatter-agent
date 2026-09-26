@@ -111,8 +111,9 @@
     // Every field in latest.json comes from the model or the game. Render it only through textContent.
     const REFRESH_MS = 30000;
     const TICK_MS = 15000;
-    const STALE_AFTER_MS = 15 * 60 * 1000; // round wall cap (8 min) + publisher interval + margin
-    const LIMITS = { prepilot: { runs: 3, rounds: 30 }, pilot: { runs: 1, rounds: null } };
+    const STALE_AFTER_MS = 15 * 60 * 1000; // round wall cap (8 min) + publisher interval + margin, counted after any planned wait
+    const LIMITS = { prepilot: { runs: 3, rounds: 30 }, soak: { runs: 1, rounds: null }, pilot: { runs: 1, rounds: null } };
+    const MODE_LABELS = { prepilot: 'Pre-pilot', soak: '4-hour soak', pilot: 'Pilot' };
     const RUN_STATUS = { active: 'Playing', retrospective: 'Writing handoff', retrospective_failed: 'Handoff failed',
       blocked: 'Blocked', complete: 'Complete' };
     const $ = id => document.getElementById(id);
@@ -227,7 +228,7 @@
       const mode = str(data.mode);
       const limits = LIMITS[mode];
       const run = num(current.run), round = num(current.round);
-      const progress = [mode === 'prepilot' ? 'Pre-pilot' : mode === 'pilot' ? 'Pilot' : mode || 'Unknown mode'];
+      const progress = [MODE_LABELS[mode] || mode || 'Unknown mode'];
       if (run != null) progress.push(`run ${run}${limits ? ` of ${limits.runs}` : ''}`);
       if (round != null) progress.push(`round ${round}${limits?.rounds ? ` of ${limits.rounds}` : ''}`);
       $('progress').textContent = progress.join(' · ');
@@ -276,7 +277,7 @@
           fresh += `. Last fetch failed: ${lastError}${lastSuccessAt ? `; last reached ${ago(lastSuccessAt, now)}` : ''}.`;
         } else if (status === 'complete') { state = 'finished'; title = 'Finished'; }
         else if (status === 'needs_attention') { state = 'attention'; title = 'Stopped — needs attention'; }
-        else if (updated == null || now - updated > STALE_AFTER_MS) {
+        else if (updated == null || now - Math.max(updated, time(lastData.current?.nextWakeAt) ?? 0) > STALE_AFTER_MS) {
           state = 'stale'; title = 'Stale — no new round recently';
           fresh += '. The controller or publisher may have stopped.';
         } else { state = 'live'; title = 'Live'; }
