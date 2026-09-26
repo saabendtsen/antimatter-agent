@@ -112,12 +112,35 @@ export class GameBrowser {
   async checkpoint() {
     // Use the game's own Save game button. Browser storage may otherwise lag the
     // visible state by its 30-second autosave interval when a process restarts.
-    const activeTab = await this.page.locator('.o-tab-btn--active').first().elementHandle();
+    // The game reopens each tab on its last subtab, so clicking Options alone can land on
+    // Visual or Gameplay, which have no Save game button (pre-pilot run 3, round 4). Open the
+    // Saving subtab directly. Autosave is silent, so a new "Game saved" notice confirms that
+    // the game accepted this manual save.
+    const active = await this.page.evaluate(() => {
+      const tab = document.querySelector('.o-tab-btn--active');
+      const label = tab?.querySelector('.l-tab-btn-inner')?.innerText.trim();
+      return label ? { label, subtab: [...tab.querySelectorAll('.o-tab-btn--subtab')]
+        .findIndex(subtab => subtab.classList.contains('o-subtab-btn--active')) } : null;
+    });
+    const tabButton = label => this.page.locator('.o-tab-btn--subtabs')
+      .filter({ has: this.page.getByText(label, { exact: true }) }).first();
+    const seen = await this.page.evaluateHandle(() => new Set(document.querySelectorAll('.o-notification')));
     try {
-      await this.page.getByText('Options', { exact: true }).first().click();
-      await this.page.getByRole('button', { name: 'Save game' }).click();
+      const options = tabButton('Options');
+      await options.hover({ timeout: 5000 });
+      await options.locator('.o-tab-btn--subtab', { hasText: 'Saving' }).click({ timeout: 5000 });
+      await this.page.getByRole('button', { name: 'Save game', exact: true }).click({ timeout: 5000 });
+      await this.page.waitForFunction(seen => [...document.querySelectorAll('.o-notification')]
+        .some(note => !seen.has(note) && note.innerText.includes('Game saved')), seen, { timeout: 5000 })
+        .catch(() => { throw new Error('Save game was clicked but the game showed no "Game saved" notice'); });
     } finally {
-      if (activeTab) await activeTab.click().catch(() => {});
+      await seen.dispose().catch(() => {});
+      if (active) {
+        const tab = tabButton(active.label);
+        await (active.subtab >= 0
+          ? tab.hover({ timeout: 5000 }).then(() => tab.locator('.o-tab-btn--subtab').nth(active.subtab).click({ timeout: 5000 }))
+          : tab.click({ timeout: 5000 })).catch(() => {});
+      }
     }
   }
 
