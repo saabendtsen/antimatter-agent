@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, server, ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm test
+      - name: Run browser tests with Playwright system libraries
+        shell: bash
+        run: |
+          docker run --rm --init --network none \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp \
+            --volume "$PWD:/work" --workdir /work \
+            mcr.microsoft.com/playwright:v1.63.0-noble \
+            npm run test:e2e
+      - name: Build viewer image without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$(mktemp -d /dev/shm/antimatter-build.XXXXXX)"
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          docker buildx build --file Dockerfile --tag "antimatter-agent:verify-${GITHUB_SHA}" .
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: [self-hosted, linux, x64, server, ci]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce zero-spend gate
+        run: /usr/local/lib/homelab-ci/assert-zero-spend-gate.sh
+      - name: Publish digest-identified viewer image
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}"
+          export DOCKER_CONFIG="$(mktemp -d /dev/shm/antimatter-publish.XXXXXX)"
+          cleanup() { docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf -- "$DOCKER_CONFIG"; }
+          trap cleanup EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx build --file Dockerfile --tag "$image" --sbom=true --provenance=mode=max --push .
+          digest="$(docker buildx imagetools inspect "$image" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          test "${digest#sha256:}" != "$digest"
+          printf 'Published `%s@%s`\n' "ghcr.io/${GITHUB_REPOSITORY,,}" "$digest" >> "$GITHUB_STEP_SUMMARY"

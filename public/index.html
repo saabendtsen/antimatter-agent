@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080c19">
+  <meta name="referrer" content="no-referrer">
+  <title>Antimatter Agent</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #080c19; color: #e8edff;
+      --card: #121a30; --line: #2d3b5b; --muted: #a8b4d3; --ok: #6ee7a8; --warn: #ffd166; --bad: #ff8a8a; --info: #aee3ff; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3.2rem); letter-spacing: -.04em; line-height: 1.1; }
+    h2 { margin: 0 0 .75rem; font-size: 1.25rem; }
+    h3 { margin: 0; font-size: 1.05rem; }
+    p { margin: .5rem 0; }
+    a { color: var(--info); }
+    .muted { color: var(--muted); }
+    .small { font-size: .85rem; }
+    .intro { margin: .5rem 0 1rem; }
+    .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 16px; margin: 0 0 18px;
+      border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+    .banner strong { font-size: 1.05rem; }
+    .banner[data-state="live"] { border-color: #2f7d58; }
+    .banner[data-state="live"] .dot { background: var(--ok); }
+    .banner[data-state="stale"], .banner[data-state="attention"] { border-color: #8a6d1f; }
+    .banner[data-state="stale"] .dot, .banner[data-state="attention"] .dot { background: var(--warn); }
+    .banner[data-state="offline"], .banner[data-state="error"] { border-color: #8a2f3a; }
+    .banner[data-state="offline"] .dot, .banner[data-state="error"] .dot { background: var(--bad); }
+    .banner[data-state="finished"] .dot { background: var(--info); }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; min-width: 0; }
+    .screen-wrap { margin: 0 0 1rem; }
+    .screen { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid #3b4a69; background: #000; }
+    .placeholder { display: grid; place-items: center; aspect-ratio: 16 / 9; border: 1px dashed #3b4a69; border-radius: 8px; color: var(--muted); text-align: center; padding: 1rem; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 0 0 1rem; }
+    .metric { background: #0d1426; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+    .metric strong { display: block; font-size: 1.25rem; overflow-wrap: anywhere; }
+    .decision { background: #0d1426; border-left: 4px solid var(--info); border-radius: 6px; padding: 10px 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .detail { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; font-size: .85rem; margin: .5rem 0 0; }
+    .badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 650; background: #193860; color: var(--info); }
+    .badge.complete { background: #173d2b; color: var(--ok); }
+    .badge.blocked, .badge.retrospective_failed { background: #4a1a22; color: var(--bad); }
+    .badge.retrospective { background: #3d3314; color: var(--warn); }
+    .run { border-top: 1px solid var(--line); padding: 14px 0 4px; }
+    .run:first-of-type { border-top: 0; padding-top: 0; }
+    .run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+    .handoff { margin: .6rem 0; padding: 8px 12px; border-radius: 8px; background: #0d1426; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .handoff b { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; white-space: normal; }
+    summary { cursor: pointer; padding: 4px 0; }
+    summary:focus-visible, a:focus-visible { outline: 3px solid var(--info); outline-offset: 2px; border-radius: 4px; }
+    ol { padding-left: 0; margin: .5rem 0; list-style: none; }
+    li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    li:last-child { border-bottom: 0; }
+    .decision-text { overflow-wrap: anywhere; white-space: pre-wrap; margin: 2px 0; }
+    .flag { color: var(--warn); }
+    .bar { height: 6px; border-radius: 3px; background: #26324f; overflow: hidden; margin-top: 4px; max-width: 320px; }
+    .bar span { display: block; height: 100%; background: var(--info); }
+    .bar.high span { background: var(--warn); }
+    time { color: var(--muted); font-size: .85rem; }
+    footer { margin-top: 18px; }
+    @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } body { padding: 14px; } .card { padding: 16px; } }
+    @media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s; } }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="muted small">A local model learning one game at a time</p>
+    <h1>Antimatter Agent</h1>
+    <p class="intro muted">A fresh mind each round. One game save per playthrough. A short lesson passed to the next run.</p>
+  </header>
+  <main>
+    <section id="connection" class="banner" data-state="loading" aria-labelledby="connection-title">
+      <span class="dot" aria-hidden="true"></span>
+      <strong id="connection-title" role="status" aria-live="polite">Loading latest data…</strong>
+      <span id="freshness" class="muted small"></span>
+      <span id="run-status" class="small"></span>
+    </section>
+    <noscript><p>This viewer needs JavaScript to load the latest data.</p></noscript>
+    <div class="grid">
+      <section class="card" aria-labelledby="current-title">
+        <h2 id="current-title">Current game</h2>
+        <p id="progress" class="muted">Waiting for data.</p>
+        <div class="metrics">
+          <div class="metric"><span class="muted small">Antimatter</span><strong id="antimatter">—</strong></div>
+          <div class="metric"><span class="muted small">Per second</span><strong id="production">—</strong></div>
+          <div class="metric"><span class="muted small">Next round</span><strong id="next-round">—</strong></div>
+        </div>
+        <figure class="screen-wrap">
+          <a id="screen-link" target="_blank" rel="noopener noreferrer" hidden><img id="screen" class="screen" alt="Latest screenshot of the game"></a>
+          <div id="screen-placeholder" class="placeholder">No screenshot yet.</div>
+          <figcaption id="screen-caption" class="muted small"></figcaption>
+        </figure>
+        <h3>Last decision</h3>
+        <p id="decision-meta" class="muted small"></p>
+        <p id="decision" class="decision">Waiting for the first round.</p>
+        <details><summary>Visible game text</summary><pre id="page-text" class="detail"></pre></details>
+      </section>
+      <section class="card" aria-labelledby="runs-title">
+        <h2 id="runs-title">Playthroughs</h2>
+        <div id="runs"><p class="muted">No playthrough data yet.</p></div>
+      </section>
+    </div>
+  </main>
+  <footer><p class="muted small" id="updated"></p></footer>
+  <script>
+    'use strict';
+    // Every field in latest.json comes from the model or the game. Render it only through textContent.
+    const REFRESH_MS = 30000;
+    const TICK_MS = 15000;
+    const STALE_AFTER_MS = 15 * 60 * 1000; // round wall cap (8 min) + publisher interval + margin
+    const LIMITS = { prepilot: { runs: 3, rounds: 30 }, pilot: { runs: 1, rounds: null } };
+    const RUN_STATUS = { active: 'Playing', retrospective: 'Writing handoff', retrospective_failed: 'Handoff failed',
+      blocked: 'Blocked', complete: 'Complete' };
+    const $ = id => document.getElementById(id);
+    let lastData = null;
+    let lastSuccessAt = null;
+    let lastError = null;
+    const openRuns = new Map();
+
+    const str = value => typeof value === 'string' ? value : (typeof value === 'number' && Number.isFinite(value) ? String(value) : '');
+    const num = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
+    const time = value => { const ms = typeof value === 'string' ? Date.parse(value) : NaN; return Number.isFinite(ms) ? ms : null; };
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+    function ago(ms, now = Date.now()) {
+      const seconds = Math.max(0, Math.round((now - ms) / 1000));
+      if (seconds < 45) return 'just now';
+      const minutes = Math.round(seconds / 60);
+      if (minutes < 60) return `${minutes} min ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 48) return `${hours} h ${minutes % 60} min ago`;
+      return `${Math.floor(hours / 24)} days ago`;
+    }
+    function duration(seconds) {
+      if (seconds == null || seconds < 0) return '';
+      const minutes = Math.round(seconds / 60);
+      return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+    }
+    function stamp(ms) { return ms == null ? 'unknown time' : new Date(ms).toLocaleString(); }
+    function safeScreenshot(value) {
+      const name = str(value);
+      return /^[\w-]+\.(png|jpe?g|webp)(\?v=\d+)?$/i.test(name) ? `./data/${name}` : null;
+    }
+    function contextText(usage) {
+      const peak = num(usage?.peakTokens), window = num(usage?.contextWindow);
+      if (peak == null || !window) return 'Peak context: unavailable';
+      const percent = num(usage.peakPercent) ?? Math.round(peak / window * 1000) / 10;
+      return `Peak context: ${peak.toLocaleString()} / ${window.toLocaleString()} tokens (${percent}%)${usage.ceilingReached === true ? ' · action ceiling reached' : ''}`;
+    }
+    function contextBar(usage) {
+      const peak = num(usage?.peakTokens), window = num(usage?.contextWindow);
+      if (peak == null || !window) return null;
+      const bar = el('div', peak / window >= 0.7 ? 'bar high' : 'bar');
+      bar.setAttribute('aria-hidden', 'true');
+      const fill = el('span'); fill.style.width = `${Math.min(100, Math.max(0, peak / window * 100))}%`;
+      bar.append(fill); return bar;
+    }
+    function handoff(label, text) {
+      const block = el('p', 'handoff');
+      block.append(el('b', null, label), document.createTextNode(text));
+      return block;
+    }
+
+    function runCard(run, mode) {
+      const number = num(run.number);
+      const status = str(run.status);
+      const decisions = Array.isArray(run.decisions) ? run.decisions.filter(d => d && typeof d === 'object') : [];
+      const limit = LIMITS[mode]?.rounds;
+      const section = el('section', 'run');
+      section.dataset.run = number ?? '';
+      const head = el('div', 'run-head');
+      head.append(el('h3', null, `Run ${number ?? '?'}`), el('span', `badge ${RUN_STATUS[status] ? status : ''}`, RUN_STATUS[status] || status || 'Unknown'));
+      section.append(head);
+      const facts = [`${num(run.rounds) ?? 0}${limit ? ` / ${limit}` : ''} rounds`];
+      if (num(run.durationSeconds) != null) facts.push(duration(run.durationSeconds));
+      else if (time(run.startedAt) != null && status === 'active') facts.push(`started ${ago(time(run.startedAt))}`);
+      const peaks = decisions.map(d => num(d.contextUsage?.peakPercent)).filter(v => v != null);
+      if (peaks.length) facts.push(`max context ${Math.max(...peaks)}%`);
+      if (run.infinityClaimed === true) facts.push('Infinity claimed');
+      section.append(el('p', 'muted small', facts.join(' · ')));
+      section.append(handoff('Inherited handoff', str(run.inheritedHandoff) || 'None — first playthrough or empty handoff.'));
+      const retro = run.retrospective && typeof run.retrospective === 'object' ? run.retrospective : null;
+      if (retro) {
+        const assessment = [str(retro.inheritedAssessment), str(retro.reason)].filter(Boolean).join(' — ');
+        if (assessment) section.append(handoff('Assessment of inherited handoff', assessment));
+        section.append(handoff('Outgoing handoff', str(retro.handoff) || 'Empty.'));
+      } else if (status === 'active' || status === 'retrospective') {
+        section.append(el('p', 'muted small', 'Outgoing handoff: written when this playthrough ends.'));
+      }
+
+      const details = el('details');
+      const key = String(number);
+      details.open = openRuns.has(key) ? openRuns.get(key) : status === 'active';
+      details.addEventListener('toggle', () => openRuns.set(key, details.open));
+      details.append(el('summary', null, `Decisions (${decisions.length})`));
+      const list = el('ol');
+      for (const decision of [...decisions].reverse()) {
+        const item = el('li');
+        const at = time(decision.at);
+        const when = el('time', null, `Round ${num(decision.round) ?? '?'} · ${stamp(at)}`);
+        if (at != null) when.dateTime = new Date(at).toISOString();
+        const body = el('div', 'decision-text', str(decision.summary) || '(no summary)');
+        const metrics = el('div', 'muted small', contextText(decision.contextUsage));
+        if (decision.appliedWakeSeconds === 0) metrics.textContent += ' · next round immediate';
+        else if (num(decision.appliedWakeSeconds)) metrics.textContent += ` · waited ${duration(decision.appliedWakeSeconds)}`;
+        item.append(when, body, metrics);
+        if (decision.incomplete === true) item.append(el('div', 'flag small', 'Round ended incomplete'));
+        const bar = contextBar(decision.contextUsage); if (bar) item.append(bar);
+        list.append(item);
+      }
+      if (!decisions.length) list.append(el('li', 'muted', 'No decisions yet.'));
+      details.append(list); section.append(details);
+      return section;
+    }
+
+    function renderData(data) {
+      const current = data.current && typeof data.current === 'object' ? data.current : {};
+      const runs = Array.isArray(data.runs) ? data.runs.filter(r => r && typeof r === 'object') : [];
+      const mode = str(data.mode);
+      const limits = LIMITS[mode];
+      const run = num(current.run), round = num(current.round);
+      const progress = [mode === 'prepilot' ? 'Pre-pilot' : mode === 'pilot' ? 'Pilot' : mode || 'Unknown mode'];
+      if (run != null) progress.push(`run ${run}${limits ? ` of ${limits.runs}` : ''}`);
+      if (round != null) progress.push(`round ${round}${limits?.rounds ? ` of ${limits.rounds}` : ''}`);
+      $('progress').textContent = progress.join(' · ');
+      $('antimatter').textContent = str(current.antimatter) || '—';
+      $('production').textContent = str(current.production) || '—';
+      const wake = time(current.nextWakeAt);
+      $('next-round').textContent = data.status !== 'active' ? 'Stopped'
+        : wake != null && wake > Date.now() ? new Date(wake).toLocaleTimeString() : 'Immediately';
+
+      const src = safeScreenshot(current.screenshot);
+      const link = $('screen-link'), image = $('screen'), placeholder = $('screen-placeholder');
+      if (src) {
+        if (image.getAttribute('src') !== src) { image.src = src; link.href = src; }
+        image.alt = `Game screenshot after run ${run ?? '?'}, round ${round ?? '?'}`;
+        link.hidden = false; placeholder.hidden = true;
+        $('screen-caption').textContent = `Screenshot after round ${round ?? '?'}. Select it to open full size.`;
+      } else {
+        link.hidden = true; image.removeAttribute('src'); placeholder.hidden = false;
+        placeholder.textContent = 'No screenshot yet.'; $('screen-caption').textContent = '';
+      }
+
+      const currentRun = runs.find(r => num(r.number) === run);
+      const lastDecision = currentRun && Array.isArray(currentRun.decisions) ? currentRun.decisions.at(-1) : null;
+      $('decision').textContent = str(current.summary) || 'Waiting for the first round.';
+      $('decision-meta').textContent = lastDecision && time(lastDecision.at) != null
+        ? `Round ${num(lastDecision.round) ?? '?'} · ${stamp(time(lastDecision.at))} · ${contextText(lastDecision.contextUsage)}` : '';
+      $('page-text').textContent = str(current.pageText);
+      const runsNode = $('runs');
+      if (runs.length) runsNode.replaceChildren(...runs.map(r => runCard(r, mode)));
+      else runsNode.replaceChildren(el('p', 'muted', 'No playthrough has started yet.'));
+    }
+
+    function renderConnection(now = Date.now()) {
+      const banner = $('connection');
+      const updated = lastData ? time(lastData.updatedAt) : null;
+      const status = lastData ? str(lastData.status) : '';
+      let state, title, fresh = '';
+      if (!lastData) {
+        state = lastError ? 'error' : 'loading';
+        title = lastError ? 'Cannot load data yet' : 'Loading latest data…';
+        fresh = lastError ? `${lastError}. Retrying every ${REFRESH_MS / 1000} s.` : '';
+      } else {
+        fresh = updated != null ? `Data updated ${ago(updated, now)} (${stamp(updated)})` : 'Update time unknown';
+        if (lastError) {
+          state = 'offline'; title = 'Offline — showing last received data';
+          fresh += `. Last fetch failed: ${lastError}${lastSuccessAt ? `; last reached ${ago(lastSuccessAt, now)}` : ''}.`;
+        } else if (status === 'complete') { state = 'finished'; title = 'Finished'; }
+        else if (status === 'needs_attention') { state = 'attention'; title = 'Stopped — needs attention'; }
+        else if (updated == null || now - updated > STALE_AFTER_MS) {
+          state = 'stale'; title = 'Stale — no new round recently';
+          fresh += '. The controller or publisher may have stopped.';
+        } else { state = 'live'; title = 'Live'; }
+      }
+      banner.dataset.state = state;
+      if ($('connection-title').textContent !== title) $('connection-title').textContent = title;
+      $('freshness').textContent = fresh;
+      const mode = lastData ? str(lastData.mode) : '';
+      $('run-status').textContent = lastData ? `${mode || 'unknown mode'} · ${status || 'unknown status'}` : '';
+      $('updated').textContent = lastSuccessAt ? `Viewer last checked successfully at ${new Date(lastSuccessAt).toLocaleTimeString()}. Refreshes every ${REFRESH_MS / 1000} s.` : '';
+    }
+
+    $('screen').addEventListener('error', () => {
+      if (!$('screen').getAttribute('src')) return;
+      $('screen-link').hidden = true; $('screen-placeholder').hidden = false;
+      $('screen-placeholder').textContent = 'Screenshot could not be loaded.';
+    });
+
+    let inFlight = false;
+    async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const response = await fetch(`./data/latest.json?v=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) throw Object.assign(
+          new Error(response.status === 404 ? 'No data published yet (HTTP 404)' : `HTTP ${response.status}`),
+          { httpStatus: response.status });
+        const data = await response.json();
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Unexpected data format');
+        lastData = data; lastSuccessAt = Date.now(); lastError = null;
+        renderData(data);
+      } catch (error) {
+        lastError = error instanceof SyntaxError ? 'Data file is not valid JSON'
+          : error?.httpStatus ? error.message
+          : navigator.onLine === false ? 'This device is offline' : str(error?.message) || 'Network error';
+      } finally { inFlight = false; renderConnection(); }
+    }
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+    setInterval(() => renderConnection(), TICK_MS);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+    window.addEventListener('online', refresh);
+    window.addEventListener('offline', () => { lastError = 'This device is offline'; renderConnection(); });
+  </script>
+</body>
+</html>

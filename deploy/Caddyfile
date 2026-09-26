@@ -1,0 +1,6 @@
+:8080 {
+    root * /srv
+    header Cache-Control "no-store"
+    respond /health 200
+    file_server
+}
