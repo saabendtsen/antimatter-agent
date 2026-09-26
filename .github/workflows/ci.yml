@@ -20,9 +20,14 @@ jobs:
           node-version: '24'
       - run: npm ci
       - run: npm test
-      - name: Install Playwright browser
-        run: npx playwright install chromium
-      - run: npm run test:e2e
+      - name: Run browser tests with Playwright system libraries
+        shell: bash
+        run: |
+          docker run --rm --init --network none \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp \
+            --volume "$PWD:/work" --workdir /work \
+            mcr.microsoft.com/playwright:v1.63.0-noble \
+            npm run test:e2e
       - name: Build viewer image without publishing
         shell: bash
         run: |
