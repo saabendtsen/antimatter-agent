@@ -74,18 +74,31 @@ function publish(control, current = {}) {
 }
 
 function runEvidence(index, memory) {
-  const kept = new Set(['round_start', 'round_observation', 'round_decision', 'round_end', 'browser',
-    'browser_error', 'model_error', 'harness_error', 'game_checkpoint_error',
-    'memory_warm_write', 'memory_cold_write', 'memory_read', 'memory_delete']);
+  const events = readEvents(eventsFile(index));
+  const rounds = new Map();
+  for (const event of events) {
+    if (!Number.isInteger(event.round)) continue;
+    if (!rounds.has(event.round)) rounds.set(event.round, { number: event.round });
+    const item = rounds.get(event.round);
+    if (event.type === 'round_observation') item.start = safePublicText(event.text, 350);
+    if (event.type === 'browser' && event.action !== 'inspect') {
+      item.action = { kind: event.action, control: event.index,
+        result: safePublicText(event.observation?.text, 350) };
+    }
+    if (event.type === 'round_end') {
+      item.decision = safePublicText(event.summary, 500);
+      item.waitSeconds = event.nextWakeSeconds;
+      item.incomplete = Boolean(event.incomplete);
+    }
+    if (['browser_error', 'model_error', 'harness_error', 'game_checkpoint_error'].includes(event.type)) {
+      (item.errors ??= []).push(safePublicText(event.message, 250));
+    }
+  }
   return {
-    events: readEvents(eventsFile(index)).filter(event => kept.has(event.type)).map(event => ({
-      at: event.at, type: event.type, round: event.round,
-      summary: safePublicText(event.summary, 800), action: event.action, index: event.index,
-      visibleText: safePublicText(event.text ?? event.observation?.text, 650),
-      key: event.key, title: event.title, note: safePublicText(event.type?.startsWith('memory_') ? event.text : '', 800),
-      message: safePublicText(event.message, 350), nextWakeSeconds: event.nextWakeSeconds,
-      incomplete: event.incomplete,
-    })),
+    rounds: [...rounds.values()],
+    memoryChanges: events.filter(event => ['memory_warm_write', 'memory_cold_write', 'memory_delete'].includes(event.type))
+      .map(event => ({ round: event.round, kind: event.type, key: event.key,
+        text: safePublicText(event.text, 250) })).slice(-30),
     finalWarmMemory: memory.warm(),
     finalColdNotes: memory.data.cold,
   };

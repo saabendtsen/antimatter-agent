@@ -140,7 +140,7 @@ export async function retrospect({ inheritedHandoff, evidence, maxSeconds = 360 
   const session = await newSession([], `You are the same local game-playing model reviewing one finished playthrough. You have no tools. Evaluate observed evidence honestly. Write a successor handoff of at most 150 words. You choose its content freely.`);
   const timer = setTimeout(() => session.abort().catch(() => {}), maxSeconds * 1000);
   try {
-    await session.prompt(`Inherited handoff: ${inheritedHandoff || '(none)'}\nPlaythrough evidence:\n${JSON.stringify(evidence).slice(0, 70000)}\nReturn only JSON with keys inheritedAssessment (useful, harmful, inconclusive, or none), reason (evidence-based), and handoff (free-form, at most 150 words).`);
+    await session.prompt(`Inherited handoff: ${inheritedHandoff || '(none)'}\nPlaythrough evidence:\n${JSON.stringify(evidence)}\nReturn only JSON with keys inheritedAssessment (useful, harmful, inconclusive, or none), reason (evidence-based), and handoff (free-form, at most 150 words).`);
     return parseRetrospective(session.getLastAssistantText() ?? '');
   } finally { clearTimeout(timer); session.dispose(); }
 }
