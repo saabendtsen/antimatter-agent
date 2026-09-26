@@ -84,7 +84,7 @@ test('mobile viewer shows live state, screenshot, handoffs and decisions as plai
   assert.match(await page.locator('#decision-meta').innerText(), /Round 4 · .* Peak context: 30,000 \/ 120,000 tokens \(25%\)/);
   assert.equal(await page.locator('#page-text').textContent(), scriptish);
 
-  const screen = page.getByRole('img', { name: 'Game screenshot after run 2, round 4' });
+  const screen = page.getByRole('img', { name: 'Game screenshot after round 4 of run 2' });
   await screen.waitFor();
   assert.equal(await screen.getAttribute('src'), './data/screen.png?v=123');
   assert.equal(await screen.evaluate(image => image.complete && image.naturalWidth > 0), true);
@@ -155,9 +155,11 @@ test('viewer marks old data as stale and rejects unsafe screenshot paths', () =>
 test('viewer becomes stale while the page stays open without new data', () => withBrowser(async browser => {
   const { page } = await openViewer(browser, DESKTOP, () => ({ json: snapshot() }));
   await page.locator('#connection[data-state="live"]').waitFor();
-  await page.clock.fastForward(20 * 60 * 1000);
+  await page.clock.fastForward(19 * 60 * 1000);
+  assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live', 'a full 18-minute round is not stale');
+  await page.clock.fastForward(2 * 60 * 1000);
   await page.locator('#connection[data-state="stale"]').waitFor();
-  assert.match(await page.locator('#freshness').innerText(), /Data updated 22 min ago/);
+  assert.match(await page.locator('#freshness').innerText(), /Data updated 23 min ago/);
 }));
 
 test('soak viewer labels the mode and stays live through a planned wait', () => withBrowser(async browser => {
@@ -165,13 +167,65 @@ test('soak viewer labels the mode and stays live through a planned wait', () => 
   data.runs = [data.runs[1]];
   data.runs[0].number = 1;
   data.current.run = 1;
+  // The maximum 10-minute wait was planned when round 4 ended 16 minutes ago.
   data.current.nextWakeAt = new Date(NOW - 6 * 60 * 1000).toISOString();
+  data.current.phase = 'waiting';
   const { page } = await openViewer(browser, MOBILE, () => ({ json: data }));
   await page.locator('#connection[data-state="live"]').waitFor();
-  assert.equal(await page.locator('#progress').innerText(), '4-hour soak · run 1 of 1 · round 4');
+  assert.equal(await page.locator('#progress').innerText(), '4-hour soak · run 1 of 1 · round 4 · between rounds');
   assert.match(await page.locator('.run[data-run="1"]').innerText(), /4 rounds/);
-  await page.clock.fastForward(10 * 60 * 1000);
+  await page.clock.fastForward(15 * 60 * 1000);
+  assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live');
+  await page.clock.fastForward(2 * 60 * 1000);
   await page.locator('#connection[data-state="stale"]').waitFor();
+}));
+
+test('a new playthrough is announced without the previous game screenshot, text or decision', () => withBrowser(async browser => {
+  const data = snapshot({ updatedAt: new Date(NOW - 30 * 1000).toISOString() });
+  data.runs[1] = { ...data.runs[1], status: 'complete', endedAt: '2026-09-26T19:04:00Z', durationSeconds: 2040,
+    retrospective: { inheritedAssessment: 'useful', reason: 'Helped', handoff: 'Buy tickspeed early.' } };
+  data.runs.push({ number: 3, status: 'active', startedAt: new Date(NOW - 30 * 1000).toISOString(), endedAt: null, rounds: 0,
+    durationSeconds: null, infinityClaimed: false, summary: '', inheritedHandoff: 'Buy tickspeed early.', retrospective: null, decisions: [] });
+  data.current = { run: 3, round: null, phase: 'starting', roundStartedAt: null, roundEndsBy: null, summary: '', pageText: '',
+    screenshot: null, nextWakeAt: null, antimatter: null, production: null };
+  const { page } = await openViewer(browser, MOBILE, () => ({ json: data }));
+  await page.locator('#connection[data-state="live"]').waitFor();
+  assert.equal(await page.locator('#progress').innerText(), 'Pre-pilot · run 3 of 3 · starting playthrough');
+  assert.equal(await page.locator('#next-round').innerText(), 'Starting');
+  assert.equal(await page.locator('#antimatter').innerText(), '—');
+  assert.equal(await page.locator('#screen-link').isHidden(), true);
+  assert.equal(await page.locator('#screen-placeholder').innerText(), "Waiting for the new playthrough's first screenshot.");
+  assert.equal(await page.locator('#decision').innerText(), 'Waiting for the first round.');
+  assert.equal(await page.locator('#decision-meta').innerText(), '');
+  assert.equal(await page.locator('#page-text').textContent(), '');
+  const active = page.locator('.run[data-run="3"]');
+  assert.match(await active.innerText(), /Playing/);
+  assert.match(await active.innerText(), /0 \/ 30 rounds/);
+  assert.equal(await active.locator('details').evaluate(node => node.open), true);
+  await assertNoInjection(page);
+}));
+
+test('a round in progress shows its start observation and stays live for its full eighteen minutes', () => withBrowser(async browser => {
+  const data = snapshot({ updatedAt: new Date(NOW - 60 * 1000).toISOString() });
+  data.runs[1].rounds = 5;
+  data.current = { ...data.current, round: 5, phase: 'playing', summary: 'Saved for a tickspeed upgrade.', antimatter: '12 K',
+    roundStartedAt: new Date(NOW - 60 * 1000).toISOString(), roundEndsBy: new Date(NOW + 17 * 60 * 1000).toISOString(),
+    screenshot: 'screen.png?v=456' };
+  const { page } = await openViewer(browser, DESKTOP, () => ({ json: data }));
+  await page.locator('#connection[data-state="live"]').waitFor();
+  assert.equal(await page.locator('#progress').innerText(), 'Pre-pilot · run 2 of 3 · round 5 of 30 · round in progress');
+  assert.equal(await page.locator('#next-round').innerText(), 'Now, until 7:22:00 PM');
+  assert.equal(await page.locator('#antimatter').innerText(), '12 K');
+  assert.equal(await page.locator('#screen-caption').innerText(), 'Screenshot at the start of round 5. Select it to open full size.');
+  await page.getByRole('img', { name: 'Game screenshot at the start of round 5 of run 2' }).waitFor();
+  // The last completed decision (round 4) stays labelled as such while round 5 plays.
+  assert.equal(await page.locator('#decision').innerText(), 'Saved for a tickspeed upgrade.');
+  assert.match(await page.locator('#decision-meta').innerText(), /^Round 4 · /);
+  await page.clock.fastForward(20 * 60 * 1000);
+  assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live');
+  await page.clock.fastForward(2 * 60 * 1000);
+  await page.locator('#connection[data-state="stale"]').waitFor();
+  await assertNoInjection(page);
 }));
 
 test('viewer keeps last data visible and reports offline when fetches fail, then recovers', () => withBrowser(async browser => {

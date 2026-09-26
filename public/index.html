@@ -111,9 +111,13 @@
     // Every field in latest.json comes from the model or the game. Render it only through textContent.
     const REFRESH_MS = 30000;
     const TICK_MS = 15000;
-    const STALE_AFTER_MS = 15 * 60 * 1000; // round wall cap (8 min) + publisher interval + margin, counted after any planned wait
+    // Counted from the later of the last update and any planned wake. The controller publishes when a round
+    // starts and when it ends, so an active round leaves at most its 18-minute cap plus checkpoint, capture and
+    // the publisher's 60-second copy interval between updates. Three more minutes absorb slow captures.
+    const STALE_AFTER_MS = 22 * 60 * 1000;
     const LIMITS = { prepilot: { runs: 3, rounds: 30 }, soak: { runs: 1, rounds: null }, pilot: { runs: 1, rounds: null } };
     const MODE_LABELS = { prepilot: 'Pre-pilot', soak: '4-hour soak', pilot: 'Pilot' };
+    const PHASES = { starting: 'starting playthrough', playing: 'round in progress', waiting: 'between rounds', reviewing: 'writing handoff' };
     const RUN_STATUS = { active: 'Playing', retrospective: 'Writing handoff', retrospective_failed: 'Handoff failed',
       blocked: 'Blocked', complete: 'Complete' };
     const $ = id => document.getElementById(id);
@@ -231,23 +235,30 @@
       const progress = [MODE_LABELS[mode] || mode || 'Unknown mode'];
       if (run != null) progress.push(`run ${run}${limits ? ` of ${limits.runs}` : ''}`);
       if (round != null) progress.push(`round ${round}${limits?.rounds ? ` of ${limits.rounds}` : ''}`);
+      const phase = str(current.phase);
+      if (data.status === 'active' && PHASES[phase]) progress.push(PHASES[phase]);
       $('progress').textContent = progress.join(' · ');
       $('antimatter').textContent = str(current.antimatter) || '—';
       $('production').textContent = str(current.production) || '—';
-      const wake = time(current.nextWakeAt);
+      const wake = time(current.nextWakeAt), endsBy = time(current.roundEndsBy);
       $('next-round').textContent = data.status !== 'active' ? 'Stopped'
+        : phase === 'playing' ? (endsBy != null ? `Now, until ${new Date(endsBy).toLocaleTimeString()}` : 'Now')
+        : phase === 'starting' ? 'Starting'
+        : phase === 'reviewing' ? 'After handoff'
         : wake != null && wake > Date.now() ? new Date(wake).toLocaleTimeString() : 'Immediately';
 
       const src = safeScreenshot(current.screenshot);
       const link = $('screen-link'), image = $('screen'), placeholder = $('screen-placeholder');
       if (src) {
         if (image.getAttribute('src') !== src) { image.src = src; link.href = src; }
-        image.alt = `Game screenshot after run ${run ?? '?'}, round ${round ?? '?'}`;
+        const moment = phase === 'playing' ? 'at the start of' : 'after';
+        image.alt = `Game screenshot ${moment} round ${round ?? '?'} of run ${run ?? '?'}`;
         link.hidden = false; placeholder.hidden = true;
-        $('screen-caption').textContent = `Screenshot after round ${round ?? '?'}. Select it to open full size.`;
+        $('screen-caption').textContent = `Screenshot ${moment} round ${round ?? '?'}. Select it to open full size.`;
       } else {
         link.hidden = true; image.removeAttribute('src'); placeholder.hidden = false;
-        placeholder.textContent = 'No screenshot yet.'; $('screen-caption').textContent = '';
+        placeholder.textContent = phase === 'starting' ? "Waiting for the new playthrough's first screenshot." : 'No screenshot yet.';
+        $('screen-caption').textContent = '';
       }
 
       const currentRun = runs.find(r => num(r.number) === run);
