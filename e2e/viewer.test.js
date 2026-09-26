@@ -37,8 +37,9 @@ function snapshot(overrides = {}) {
 }
 
 // responder(url) returns a route.fulfill options object, or 'abort' to simulate a network failure.
-async function openViewer(browser, viewport, responder) {
+async function openViewer(browser, viewport, responder, simulateOffline = false) {
   const page = await browser.newPage({ viewport, locale: 'en-US', timezoneId: 'UTC' });
+  if (simulateOffline) await page.addInitScript(() => Object.defineProperty(navigator, 'onLine', { get: () => false }));
   await page.clock.install({ time: NOW });
   const state = { responder, requests: 0 };
   await page.route('http://viewer.test/**', route => {
@@ -160,7 +161,7 @@ test('viewer becomes stale while the page stays open without new data', () => wi
 }));
 
 test('viewer keeps last data visible and reports offline when fetches fail, then recovers', () => withBrowser(async browser => {
-  const { page, state } = await openViewer(browser, MOBILE, () => ({ json: snapshot() }));
+  const { page, state } = await openViewer(browser, MOBILE, () => ({ json: snapshot() }), true);
   await page.locator('#connection[data-state="live"]').waitFor();
   state.responder = () => ({ status: 503, body: 'unavailable' });
   await page.clock.fastForward(30000);
@@ -183,7 +184,7 @@ test('viewer keeps last data visible and reports offline when fetches fail, then
 }));
 
 test('viewer explains a missing or malformed data file before any data arrives', () => withBrowser(async browser => {
-  const { page, state } = await openViewer(browser, MOBILE, () => ({ status: 404, body: 'not found' }));
+  const { page, state } = await openViewer(browser, MOBILE, () => ({ status: 404, body: 'not found' }), true);
   await page.locator('#connection[data-state="error"]').waitFor();
   assert.equal(await page.locator('#connection-title').innerText(), 'Cannot load data yet');
   assert.match(await page.locator('#freshness').innerText(), /No data published yet \(HTTP 404\)\. Retrying every 30 s/);

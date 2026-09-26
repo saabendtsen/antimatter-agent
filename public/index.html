@@ -301,13 +301,17 @@
       inFlight = true;
       try {
         const response = await fetch(`./data/latest.json?v=${Date.now()}`, { cache: 'no-store' });
-        if (!response.ok) throw new Error(response.status === 404 ? 'No data published yet (HTTP 404)' : `HTTP ${response.status}`);
+        if (!response.ok) throw Object.assign(
+          new Error(response.status === 404 ? 'No data published yet (HTTP 404)' : `HTTP ${response.status}`),
+          { httpStatus: response.status });
         const data = await response.json();
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Unexpected data format');
         lastData = data; lastSuccessAt = Date.now(); lastError = null;
         renderData(data);
       } catch (error) {
-        lastError = error instanceof SyntaxError ? 'Data file is not valid JSON' : (navigator.onLine === false ? 'This device is offline' : str(error?.message) || 'Network error');
+        lastError = error instanceof SyntaxError ? 'Data file is not valid JSON'
+          : error?.httpStatus ? error.message
+          : navigator.onLine === false ? 'This device is offline' : str(error?.message) || 'Network error';
       } finally { inFlight = false; renderConnection(); }
     }
     refresh();
