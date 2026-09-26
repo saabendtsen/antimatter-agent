@@ -47,6 +47,9 @@ function publicHistory(control) {
     startedAt: run.startedAt,
     endedAt: run.endedAt ?? null,
     rounds: run.round,
+    durationSeconds: run.endedAt ? Math.round((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000) : null,
+    infinityClaimed: Boolean(run.infinityClaimed),
+    summary: safePublicText(readEvents(eventsFile(index)).filter(e => e.type === 'round_end').at(-1)?.summary, 1000),
     inheritedHandoff: safePublicText(run.inheritedHandoff, 1200),
     retrospective: run.retrospective ? {
       inheritedAssessment: run.retrospective.inheritedAssessment,
@@ -115,7 +118,7 @@ async function executeRun(control, index) {
     writeJsonAtomic(CONTROL_FILE, control);
     log(index, { type: 'run_start', inheritedHandoff: run.inheritedHandoff });
   }
-  const memory = new GameMemory(path.join(dir, 'memory.json'), event => log(index, event));
+  const memory = new GameMemory(path.join(dir, 'memory.json'), event => log(index, { round: run.round, ...event }));
   const browser = new GameBrowser(path.join(dir, 'browser-profile'));
   if (run.status === 'active') await browser.open();
   try {

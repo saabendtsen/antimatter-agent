@@ -56,6 +56,14 @@
     function runCard(run) {
       const section = document.createElement('section'); section.className = 'run';
       const title = document.createElement('h3'); title.textContent = `Run ${run.number} · ${run.status} · ${run.rounds} rounds`; section.append(title);
+      if (run.endedAt) {
+        const duration = document.createElement('p'); duration.className = 'muted';
+        duration.textContent = `Duration: ${Math.round(run.durationSeconds / 60)} min${run.infinityClaimed ? ' · Infinity claimed' : ''}`;
+        section.append(duration);
+      }
+      if (run.summary) {
+        const outcome = document.createElement('p'); outcome.textContent = `Last result: ${run.summary}`; section.append(outcome);
+      }
       const inherited = document.createElement('p'); inherited.textContent = `Inherited: ${run.inheritedHandoff || 'No handoff'}`; section.append(inherited);
       if (run.retrospective) {
         const assessment = document.createElement('p'); assessment.textContent = `Previous note: ${run.retrospective.inheritedAssessment} — ${run.retrospective.reason}`; section.append(assessment);
