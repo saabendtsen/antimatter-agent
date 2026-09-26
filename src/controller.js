@@ -67,7 +67,8 @@ function publish(control, current = {}) {
     mode: control.mode, status: control.status, updatedAt: new Date().toISOString(),
     current: { run: visible.run ?? control.runs.length, round: visible.round ?? null, summary: safePublicText(visible.summary, 1000),
       pageText: safePublicText(visible.pageText, 6000), screenshot: visible.screenshot ?? null,
-      nextWakeAt: visible.nextWakeAt ?? null },
+      nextWakeAt: visible.nextWakeAt ?? null,
+      antimatter: visible.antimatter ?? null, production: visible.production ?? null },
     runs: publicHistory(control),
   });
 }
@@ -129,7 +130,9 @@ async function executeRun(control, index) {
         screenshot = `screen.png?v=${Date.now()}`;
       } catch (error) { log(index, { type: 'browser_error', round: number, message: error.message }); }
       writeJsonAtomic(CONTROL_FILE, control);
-      publish(control, { run: index + 1, round: number, summary: outcome.summary, pageText, screenshot, nextWakeAt: run.nextWakeAt });
+      publish(control, { run: index + 1, round: number, summary: outcome.summary, pageText, screenshot, nextWakeAt: run.nextWakeAt,
+        antimatter: pageText.match(/You have ([^\n]+?) antimatter\./)?.[1] ?? null,
+        production: pageText.match(/You are getting ([^\n]+?) antimatter per second\./)?.[1] ?? null });
       if (run.consecutiveFailures >= 3) {
         run.status = 'blocked';
         log(index, { type: 'run_blocked', reason: 'Three consecutive incomplete rounds' });
