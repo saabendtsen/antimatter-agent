@@ -33,4 +33,4 @@ The publisher uses the configured `home-server` SSH alias and sends only those t
 
 ## Runtime contract
 
-The viewer image serves static HTML on port 8080 and returns 200 at `/health`. Mount the public data directory read-only at `/srv/data`. The app is read-only and needs no database or secret. The server-specific Compose and Caddy route belong to `saabendtsen/home-server`.
+The viewer image serves static HTML on port 8080 and returns 200 at `/health`. The page polls `data/latest.json` every 30 seconds and renders every field as text. Its status banner shows `Live`, `Stale` (no new `updatedAt` for 15 minutes while the run is active), `Offline` (the last fetch failed; the last received data stays visible), `Finished`, or `Stopped — needs attention`. It only loads a screenshot whose name is a plain image file name, such as `screen.png?v=123`. Mount the public data directory read-only at `/srv/data`. The app is read-only and needs no database or secret. The server-specific Compose and Caddy route belong to `saabendtsen/home-server`.
