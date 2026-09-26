@@ -88,18 +88,45 @@ function publicHistory(control) {
   }));
 }
 
-function publish(control, current = {}) {
+// The public "current" block always describes the newest playthrough. An update is merged over the
+// previous public state only when both belong to the same run, so a new playthrough never inherits
+// the prior game's screenshot, page text, decision or wake time.
+export function publicCurrent(control, update = {}, previous = {}) {
+  const run = update.run ?? control.runs.length;
+  const visible = { ...(previous?.run === run ? previous : { round: control.runs[run - 1]?.round || null }), ...update };
+  return { run, round: visible.round ?? null, phase: visible.phase ?? null,
+    roundStartedAt: visible.roundStartedAt ?? null, roundEndsBy: visible.roundEndsBy ?? null,
+    summary: safePublicText(visible.summary, 1000), pageText: safePublicText(visible.pageText, 6000),
+    screenshot: visible.screenshot ?? null, nextWakeAt: visible.nextWakeAt ?? null,
+    antimatter: visible.antimatter ?? null, production: visible.production ?? null };
+}
+
+export function gameMetrics(pageText) {
+  return { antimatter: pageText.match(/You have ([^\n]+?) antimatter\./)?.[1] ?? null,
+    production: pageText.match(/You are getting ([^\n]+?) antimatter per second\./)?.[1] ?? null };
+}
+
+function publish(control, update = {}) {
   fs.mkdirSync(PUBLIC_DIR, { recursive: true });
   const previous = readJson(path.join(PUBLIC_DIR, 'latest.json'), { current: {} }).current;
-  const visible = Object.keys(current).length ? current : previous;
   writeJsonAtomic(path.join(PUBLIC_DIR, 'latest.json'), {
     mode: control.mode, status: control.status, updatedAt: new Date().toISOString(),
-    current: { run: visible.run ?? control.runs.length, round: visible.round ?? null, summary: safePublicText(visible.summary, 1000),
-      pageText: safePublicText(visible.pageText, 6000), screenshot: visible.screenshot ?? null,
-      nextWakeAt: visible.nextWakeAt ?? null,
-      antimatter: visible.antimatter ?? null, production: visible.production ?? null },
+    current: publicCurrent(control, update, previous),
     runs: publicHistory(control),
   });
+}
+
+// The public screenshot and page text come from the harness's own observation, never from a player tool.
+async function publicView(browser, index, round) {
+  try {
+    const pageText = (await browser.observe()).text;
+    fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+    await browser.screenshot(path.join(PUBLIC_DIR, 'screen.png'));
+    return { pageText, screenshot: `screen.png?v=${Date.now()}`, ...gameMetrics(pageText) };
+  } catch (error) {
+    log(index, { type: 'browser_error', round, message: error.message });
+    return { pageText: '', screenshot: null, antimatter: null, production: null };
+  }
 }
 
 function runEvidence(index, memory) {
@@ -146,6 +173,7 @@ async function executeRun(control, index) {
     control.runs.push(run);
     writeJsonAtomic(CONTROL_FILE, control);
     log(index, { type: 'run_start', inheritedHandoff: run.inheritedHandoff });
+    publish(control, { run: index + 1, round: null, phase: 'starting' });
   }
   const memory = new GameMemory(path.join(dir, 'memory.json'), event => log(index, { round: run.round, ...event }));
   const browser = new GameBrowser(path.join(dir, 'browser-profile'));
@@ -164,6 +192,11 @@ async function executeRun(control, index) {
       const number = run.round;
       log(index, { type: 'round_start', round: number });
       writeJsonAtomic(CONTROL_FILE, control);
+      // Announce the round before the model starts, so the public view never shows the prior round or
+      // playthrough as current. The round's own timer starts inside playRound, after this capture.
+      publish(control, { run: index + 1, round: number, phase: 'playing', nextWakeAt: null,
+        roundStartedAt: new Date().toISOString(), roundEndsBy: new Date(Date.now() + maxSeconds * 1000).toISOString(),
+        ...await publicView(browser, index, number) });
       let outcome;
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
@@ -180,18 +213,10 @@ async function executeRun(control, index) {
       log(index, { type: 'round_end', round: number, ...outcome, appliedWakeSeconds });
       try { await browser.checkpoint(); log(index, { type: 'game_checkpoint', round: number }); }
       catch (error) { log(index, { type: 'game_checkpoint_error', round: number, message: error.message }); }
-      let pageText = '';
-      let screenshot = null;
-      try {
-        pageText = (await browser.observe()).text;
-        fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-        await browser.screenshot(path.join(PUBLIC_DIR, 'screen.png'));
-        screenshot = `screen.png?v=${Date.now()}`;
-      } catch (error) { log(index, { type: 'browser_error', round: number, message: error.message }); }
+      const view = await publicView(browser, index, number);
       writeJsonAtomic(CONTROL_FILE, control);
-      publish(control, { run: index + 1, round: number, summary: outcome.summary, pageText, screenshot, nextWakeAt: run.nextWakeAt,
-        antimatter: pageText.match(/You have ([^\n]+?) antimatter\./)?.[1] ?? null,
-        production: pageText.match(/You are getting ([^\n]+?) antimatter per second\./)?.[1] ?? null });
+      publish(control, { run: index + 1, round: number, phase: 'waiting', roundStartedAt: null, roundEndsBy: null,
+        summary: outcome.summary, nextWakeAt: run.nextWakeAt, ...view });
       if (run.consecutiveFailures >= 3) {
         run.status = 'blocked';
         log(index, { type: 'run_blocked', reason: 'Three consecutive incomplete rounds' });
@@ -211,6 +236,7 @@ async function executeRun(control, index) {
     run.endedAt = new Date().toISOString();
     log(index, { type: 'run_end', rounds: run.round, durationSeconds: Math.round((Date.now() - Date.parse(run.startedAt)) / 1000), infinityClaimed: Boolean(run.infinityClaimed) });
     writeJsonAtomic(CONTROL_FILE, control);
+    publish(control, { run: index + 1, phase: 'reviewing', nextWakeAt: null });
   }
   if (run.status === 'retrospective_failed') {
     run.status = 'retrospective';
