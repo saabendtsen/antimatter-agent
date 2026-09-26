@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MIN_ROUND_SECONDS, playRound, ROUND_LIMITS, roundTiming } from '../src/agent.js';
+import { MIN_ACTION_SECONDS, MIN_ROUND_SECONDS, playRound, ROUND_LIMITS, roundTiming } from '../src/agent.js';
 import { roundSeconds } from '../src/controller.js';
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,20 +55,55 @@ function round(script, timing) {
   return { outcome, events, record };
 }
 
-test('full rounds keep the eighteen-minute limit with a protected two-minute finish period', () => {
-  assert.equal(ROUND_LIMITS.seconds, 18 * 60);
+test('full rounds last twenty minutes: fifteen action minutes and a protected five-minute finish period', () => {
+  assert.equal(ROUND_LIMITS.seconds, 20 * 60);
   assert.equal(ROUND_LIMITS.browserActions, 120);
   assert.equal(ROUND_LIMITS.toolCalls, 300);
-  assert.deepEqual(roundTiming(ROUND_LIMITS.seconds), { maxSeconds: 1080, actionSeconds: 960, finishSeconds: 120 });
+  assert.deepEqual(roundTiming(ROUND_LIMITS.seconds), { maxSeconds: 1200, actionSeconds: 900, finishSeconds: 300 });
 });
 
 test('a shorter remaining playthrough shortens the action time, not the finish period', () => {
-  assert.equal(roundSeconds(3600), 1080);
-  assert.equal(roundSeconds(400), 400);
-  assert.deepEqual(roundTiming(roundSeconds(400)), { maxSeconds: 400, actionSeconds: 280, finishSeconds: 120 });
+  assert.equal(roundSeconds(3600), 1200);
+  assert.equal(roundSeconds(1190), 1190, 'a third round in a one-hour playthrough absorbs the harness overhead');
+  assert.deepEqual(roundTiming(roundSeconds(1190)), { maxSeconds: 1190, actionSeconds: 890, finishSeconds: 300 });
+  assert.deepEqual(roundTiming(roundSeconds(600)), { maxSeconds: 600, actionSeconds: 300, finishSeconds: 300 });
+  assert.equal(MIN_ROUND_SECONDS, 300 + MIN_ACTION_SECONDS);
   assert.equal(roundSeconds(MIN_ROUND_SECONDS), MIN_ROUND_SECONDS);
-  assert.equal(roundTiming(MIN_ROUND_SECONDS).actionSeconds, 60);
+  assert.equal(roundTiming(MIN_ROUND_SECONDS).actionSeconds, MIN_ACTION_SECONDS);
+  assert.equal(roundTiming(MIN_ROUND_SECONDS).finishSeconds, 300);
   assert.equal(roundSeconds(MIN_ROUND_SECONDS - 1), null);
+  assert.equal(roundSeconds(0), null);
+});
+
+// Pre-pilot run 3 round 1, scaled down 1000 times: a click in flight at the cutoff took about 17
+// seconds and was blocked, the next model request then produced nothing for 117 seconds, and a note
+// write took about 43 seconds before finish_round (about 16 seconds) could follow.
+function slowFinishAfterCutoff() {
+  return async ({ call }) => {
+    let result;
+    do { await wait(17); result = await call('browser', { action: 'click', index: 0 }); } while (!result.error);
+    await wait(117);
+    await wait(43);
+    await call('memory', { operation: 'write-warm', text: 'Saved after the cutoff.' });
+    await wait(16);
+    await call('finish_round', { summary: 'Finished in the reserve.', nextWakeSeconds: 60 });
+  };
+}
+const scaled = timing => Object.fromEntries(Object.entries(timing).map(([key, value]) => [key, value / 1000]));
+
+test('the finish period covers the slow post-cutoff requests seen in pre-pilot run 3', async () => {
+  const { outcome, events } = round(slowFinishAfterCutoff(), scaled(roundTiming(ROUND_LIMITS.seconds)));
+  const result = await outcome;
+  assert.equal(result.incomplete, undefined);
+  assert.equal(result.summary, 'Finished in the reserve.');
+  assert.equal(events.some(e => e.type === 'round_timeout'), false);
+});
+
+test('the former two-minute finish period loses the same round as incomplete', async () => {
+  const { outcome } = round(slowFinishAfterCutoff(), scaled({ maxSeconds: 1080, actionSeconds: 960, finishSeconds: 120 }));
+  const result = await outcome;
+  assert.equal(result.incomplete, true);
+  assert.equal(result.incompleteReason, 'round_time_limit');
 });
 
 test('after the cutoff, actions and retrieval close but notes and finish_round still work', async () => {

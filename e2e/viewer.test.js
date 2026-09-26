@@ -155,11 +155,11 @@ test('viewer marks old data as stale and rejects unsafe screenshot paths', () =>
 test('viewer becomes stale while the page stays open without new data', () => withBrowser(async browser => {
   const { page } = await openViewer(browser, DESKTOP, () => ({ json: snapshot() }));
   await page.locator('#connection[data-state="live"]').waitFor();
-  await page.clock.fastForward(19 * 60 * 1000);
-  assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live', 'a full 18-minute round is not stale');
+  await page.clock.fastForward(21 * 60 * 1000);
+  assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live', 'a full 20-minute round is not stale');
   await page.clock.fastForward(2 * 60 * 1000);
   await page.locator('#connection[data-state="stale"]').waitFor();
-  assert.match(await page.locator('#freshness').innerText(), /Data updated 23 min ago/);
+  assert.match(await page.locator('#freshness').innerText(), /Data updated 25 min ago/);
 }));
 
 test('soak viewer labels the mode and stays live through a planned wait', () => withBrowser(async browser => {
@@ -174,7 +174,7 @@ test('soak viewer labels the mode and stays live through a planned wait', () => 
   await page.locator('#connection[data-state="live"]').waitFor();
   assert.equal(await page.locator('#progress').innerText(), '4-hour soak · run 1 of 1 · round 4 · between rounds');
   assert.match(await page.locator('.run[data-run="1"]').innerText(), /4 rounds/);
-  await page.clock.fastForward(15 * 60 * 1000);
+  await page.clock.fastForward(17 * 60 * 1000);
   assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live');
   await page.clock.fastForward(2 * 60 * 1000);
   await page.locator('#connection[data-state="stale"]').waitFor();
@@ -205,23 +205,23 @@ test('a new playthrough is announced without the previous game screenshot, text 
   await assertNoInjection(page);
 }));
 
-test('a round in progress shows its start observation and stays live for its full eighteen minutes', () => withBrowser(async browser => {
+test('a round in progress shows its start observation and stays live for its full twenty minutes', () => withBrowser(async browser => {
   const data = snapshot({ updatedAt: new Date(NOW - 60 * 1000).toISOString() });
   data.runs[1].rounds = 5;
   data.current = { ...data.current, round: 5, phase: 'playing', summary: 'Saved for a tickspeed upgrade.', antimatter: '12 K',
-    roundStartedAt: new Date(NOW - 60 * 1000).toISOString(), roundEndsBy: new Date(NOW + 17 * 60 * 1000).toISOString(),
+    roundStartedAt: new Date(NOW - 60 * 1000).toISOString(), roundEndsBy: new Date(NOW + 19 * 60 * 1000).toISOString(),
     screenshot: 'screen.png?v=456' };
   const { page } = await openViewer(browser, DESKTOP, () => ({ json: data }));
   await page.locator('#connection[data-state="live"]').waitFor();
   assert.equal(await page.locator('#progress').innerText(), 'Pre-pilot · run 2 of 3 · round 5 of 30 · round in progress');
-  assert.equal(await page.locator('#next-round').innerText(), 'Now, until 7:22:00 PM');
+  assert.equal(await page.locator('#next-round').innerText(), 'Now, until 7:24:00 PM');
   assert.equal(await page.locator('#antimatter').innerText(), '12 K');
   assert.equal(await page.locator('#screen-caption').innerText(), 'Screenshot at the start of round 5. Select it to open full size.');
   await page.getByRole('img', { name: 'Game screenshot at the start of round 5 of run 2' }).waitFor();
   // The last completed decision (round 4) stays labelled as such while round 5 plays.
   assert.equal(await page.locator('#decision').innerText(), 'Saved for a tickspeed upgrade.');
   assert.match(await page.locator('#decision-meta').innerText(), /^Round 4 · /);
-  await page.clock.fastForward(20 * 60 * 1000);
+  await page.clock.fastForward(22 * 60 * 1000);
   assert.equal(await page.locator('#connection').getAttribute('data-state'), 'live');
   await page.clock.fastForward(2 * 60 * 1000);
   await page.locator('#connection[data-state="stale"]').waitFor();

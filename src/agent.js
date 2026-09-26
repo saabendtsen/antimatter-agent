@@ -15,11 +15,18 @@ You can inspect and click browser controls repeatedly, manage memory, then finis
 const RETRO_SYSTEM = `You are the same local game-playing model reviewing one finished playthrough. You have no tools. Evaluate observed evidence honestly. Write a successor handoff of at most 150 words. You choose its content freely.`;
 
 // Pre-pilot run 2 hit the old eight-minute cap mid-action at about 29% context without calling
-// finish_round. Its turns took about 13.5 seconds and added about 1,070 context tokens each, so
-// 16 action minutes pass half the 120k window at that pace. The last two minutes are reserved for
-// notes and finish_round; the 70% context ceiling still stops actions earlier if reached first.
-export const ROUND_LIMITS = { browserActions: 120, toolCalls: 300, seconds: 18 * 60, finishSeconds: 120 };
-export const MIN_ROUND_SECONDS = ROUND_LIMITS.finishSeconds + 60;
+// finish_round; its turns took about 13.5 seconds and added about 1,070 context tokens each. Pre-pilot
+// run 3 round 1 kept that pace (about 15 seconds per cached turn) and passed 50% context near 15
+// minutes, but its two-minute finish period was too short: the first request after the cutoff
+// steering message produced nothing for 117 seconds at 57% context, and a normal note write at that
+// size took about 43 seconds. Fifteen action minutes therefore reach roughly half the 120k window,
+// and five reserved minutes cover a slow first request plus a note and finish_round. The 70% context
+// ceiling still stops actions earlier if reached first.
+export const ROUND_LIMITS = { browserActions: 120, toolCalls: 300, seconds: 20 * 60, finishSeconds: 5 * 60 };
+// The first model response of a round took 24–72 seconds in pre-pilot run 2, so a shortened round
+// keeps at least two action minutes or is not started.
+export const MIN_ACTION_SECONDS = 120;
+export const MIN_ROUND_SECONDS = ROUND_LIMITS.finishSeconds + MIN_ACTION_SECONDS;
 
 // The controller does not start rounds shorter than MIN_ROUND_SECONDS, so a real round always keeps
 // the full finish period; the halving only guards direct callers.

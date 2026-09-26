@@ -112,9 +112,9 @@
     const REFRESH_MS = 30000;
     const TICK_MS = 15000;
     // Counted from the later of the last update and any planned wake. The controller publishes when a round
-    // starts and when it ends, so an active round leaves at most its 18-minute cap plus checkpoint, capture and
+    // starts and when it ends, so an active round leaves at most its 20-minute cap plus checkpoint, capture and
     // the publisher's 60-second copy interval between updates. Three more minutes absorb slow captures.
-    const STALE_AFTER_MS = 22 * 60 * 1000;
+    const STALE_AFTER_MS = 24 * 60 * 1000;
     const LIMITS = { prepilot: { runs: 3, rounds: 30 }, soak: { runs: 1, rounds: null }, pilot: { runs: 1, rounds: null } };
     const MODE_LABELS = { prepilot: 'Pre-pilot', soak: '4-hour soak', pilot: 'Pilot' };
     const PHASES = { starting: 'starting playthrough', playing: 'round in progress', waiting: 'between rounds', reviewing: 'writing handoff' };

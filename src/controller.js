@@ -38,8 +38,9 @@ function eventsFile(index) { return path.join(runDir(index), 'events.jsonl'); }
 function log(index, event) { appendEvent(eventsFile(index), event); }
 function transcript(index, event) { appendEvent(path.join(runDir(index), 'transcript.jsonl'), event); }
 
-// A round never outlasts the playthrough. Near the playthrough deadline, a round too short to keep
-// both some action time and the full finish period is not started; the playthrough ends instead.
+// A round never outlasts the playthrough. Near the playthrough deadline, the round loses action time,
+// never finish time; a round too short to keep MIN_ACTION_SECONDS of actions plus the full finish
+// period is not started, and the playthrough ends instead.
 export function roundSeconds(remainingSeconds) {
   return remainingSeconds < MIN_ROUND_SECONDS ? null : Math.min(ROUND_LIMITS.seconds, remainingSeconds);
 }
