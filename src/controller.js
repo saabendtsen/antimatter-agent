@@ -129,6 +129,8 @@ async function executeRun(control, index) {
         await sleep(Math.min(30000, Date.parse(run.nextWakeAt) - Date.now()));
         continue;
       }
+      const remainingSeconds = Math.floor((deadline - Date.now()) / 1000);
+      if (remainingSeconds < 15) break;
       run.round += 1;
       const number = run.round;
       log(index, { type: 'round_start', round: number });
@@ -136,7 +138,7 @@ async function executeRun(control, index) {
       let outcome;
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
-          round: number, maxSeconds: Math.max(15, Math.min(180, Math.ceil((deadline - Date.now()) / 1000))),
+          round: number, maxSeconds: Math.min(180, remainingSeconds),
           onEvent: event => log(index, { round: number, ...event }) });
       } catch (error) {
         outcome = { summary: `Harness error: ${error.message}`, nextWakeSeconds: 60, incomplete: true };
