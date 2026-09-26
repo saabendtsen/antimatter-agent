@@ -4,6 +4,8 @@ A local-model experiment for playing [Antimatter Dimensions](https://ivark.githu
 
 The model uses Pi with only three tools: a Playwright-backed game browser, bounded warm/cold memory, and a round-finishing decision. Each round has a fresh agent session. A playthrough keeps its game save and notes. A successor playthrough receives only a handoff of up to 150 words.
 
+A round can contain a sequence of up to 12 browser actions and 30 browser/memory tool calls. The model normally ends it by calling `finish_round` and choosing a wake time. An eight-minute wall cap prevents a stalled round from consuming the whole playthrough. Pi compaction is disabled inside these fresh sessions; the configured local endpoint currently offers about 120,000 context tokens, while the automatically loaded warm note is limited to 2,200 characters.
+
 The browser tool exposes visible page text, controls, navigation, clicks, and screenshots. The current text-only local model uses text and controls; screenshot results are available when the configured model accepts images. The separate public viewer always receives screenshots.
 
 ## Run on the development PC

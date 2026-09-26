@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GameBrowser } from './browser.js';
 import { GameMemory } from './memory.js';
-import { playRound, retrospect } from './agent.js';
+import { playRound, retrospect, ROUND_LIMITS } from './agent.js';
 import { appendEvent, readEvents, readJson, safePublicText, writeJsonAtomic } from './storage.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -138,7 +138,7 @@ async function executeRun(control, index) {
       let outcome;
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
-          round: number, maxSeconds: Math.min(180, remainingSeconds),
+          round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds),
           onEvent: event => log(index, { round: number, ...event }) });
       } catch (error) {
         outcome = { summary: `Harness error: ${error.message}`, nextWakeSeconds: 60, incomplete: true };
