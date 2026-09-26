@@ -7,13 +7,30 @@ import { playRound, retrospect, ROUND_LIMITS } from './agent.js';
 import { appendEvent, readEvents, readJson, safePublicText, writeJsonAtomic } from './storage.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MODE = process.argv.includes('--pilot') ? 'pilot' : 'prepilot';
+
+// The soak checks whether one playthrough stays coherent across four hours of applied waits before
+// the 24-hour pilot. Its round cap is a runaway guard; the four-hour limit is meant to end it.
+export function modeConfig(argv = process.argv, env = process.env) {
+  const flags = ['--pilot', '--soak'].filter(flag => argv.includes(flag));
+  if (flags.length > 1) throw new Error('Choose at most one of --pilot and --soak');
+  if (flags[0] === '--pilot') {
+    return { mode: 'pilot', limits: { playthroughs: 1, rounds: Number(env.PILOT_ROUNDS || 300), seconds: 24 * 3600 },
+      appliesWake: true, endsOnInfinityClaim: true };
+  }
+  if (flags[0] === '--soak') {
+    return { mode: 'soak', limits: { playthroughs: 1, rounds: 480, seconds: 4 * 3600 },
+      appliesWake: true, endsOnInfinityClaim: true };
+  }
+  return { mode: 'prepilot', limits: { playthroughs: 3, rounds: 30, seconds: 3600 },
+    appliesWake: false, endsOnInfinityClaim: false };
+}
+
+const CONFIG = modeConfig();
+const MODE = CONFIG.mode;
 const STATE_DIR = path.join(ROOT, 'state', MODE);
 const PUBLIC_DIR = path.join(ROOT, 'publication');
 const CONTROL_FILE = path.join(STATE_DIR, 'control.json');
-const LIMITS = MODE === 'pilot'
-  ? { playthroughs: 1, rounds: Number(process.env.PILOT_ROUNDS || 300), seconds: 24 * 3600 }
-  : { playthroughs: 3, rounds: 30, seconds: 3600 };
+const LIMITS = CONFIG.limits;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function runDir(index) { return path.join(STATE_DIR, `run-${String(index + 1).padStart(2, '0')}`); }
@@ -143,14 +160,14 @@ async function executeRun(control, index) {
       let outcome;
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
-          round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds), immediateNextRound: MODE === 'prepilot',
+          round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds), immediateNextRound: !CONFIG.appliesWake,
           onEvent: event => log(index, { round: number, ...event }),
           onTranscript: entry => transcript(index, { phase: 'play', round: number, ...entry }) });
       } catch (error) {
         outcome = { summary: `Harness error: ${error.message}`, nextWakeSeconds: 60, incomplete: true };
         log(index, { type: 'harness_error', round: number, message: error.stack ?? error.message });
       }
-      const appliedWakeSeconds = MODE === 'prepilot' ? 0 : outcome.nextWakeSeconds;
+      const appliedWakeSeconds = CONFIG.appliesWake ? outcome.nextWakeSeconds : 0;
       run.nextWakeAt = appliedWakeSeconds ? new Date(Date.now() + appliedWakeSeconds * 1000).toISOString() : null;
       run.consecutiveFailures = outcome.incomplete ? (run.consecutiveFailures ?? 0) + 1 : 0;
       log(index, { type: 'round_end', round: number, ...outcome, appliedWakeSeconds });
@@ -175,7 +192,7 @@ async function executeRun(control, index) {
         publish(control);
         break;
       }
-      if (MODE === 'pilot' && outcome.infinityReached) {
+      if (CONFIG.endsOnInfinityClaim && outcome.infinityReached) {
         run.infinityClaimed = true;
         break;
       }
