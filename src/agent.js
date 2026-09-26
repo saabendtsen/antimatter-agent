@@ -32,7 +32,7 @@ export function retrospectivePrompt({ inheritedHandoff, evidence }) {
   const inherited = hasHandoff(inheritedHandoff)
     ? `Inherited handoff (written about the previous playthrough's game, which started from its own fresh save): ${inheritedHandoff}`
     : 'Inherited handoff: (none). This playthrough inherited no handoff, so inheritedAssessment must be none.';
-  return `${inherited}\nPlaythrough evidence:\n${JSON.stringify(evidence)}\nThe successor playthrough will start a new game from a fresh browser save; state numbers from this game are historical observations for it, not its current state.\nReturn only JSON with keys inheritedAssessment (useful, harmful, inconclusive, or none), reason (evidence-based), and handoff (free-form, at most 150 words).`;
+  return `${inherited}\nPlaythrough evidence:\n${JSON.stringify(evidence)}\nIn each round, start is the opening visible page, finalState is the visible page when the round ended (source round_end, after the game save) or, if that capture failed, the latest visible page the round recorded (finalStateError says why), browserActions counts clicks, scrolls and navigation, and status is complete, incomplete, or no_round_end. Only the most recent rounds are listed; omittedEarlierRounds counts the rest.\nThe successor playthrough will start a new game from a fresh browser save; state numbers from this game are historical observations for it, not its current state.\nReturn only JSON with keys inheritedAssessment (useful, harmful, inconclusive, or none), reason (evidence-based), and handoff (free-form, at most 150 words).`;
 }
 
 // Pre-pilot run 2 hit the old eight-minute cap mid-action at about 29% context without calling
