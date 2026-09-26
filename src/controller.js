@@ -181,6 +181,11 @@ async function executeRun(control, index) {
     log(index, { type: 'run_end', rounds: run.round, durationSeconds: Math.round((Date.now() - Date.parse(run.startedAt)) / 1000), infinityClaimed: Boolean(run.infinityClaimed) });
     writeJsonAtomic(CONTROL_FILE, control);
   }
+  if (run.status === 'retrospective_failed') {
+    run.status = 'retrospective';
+    log(index, { type: 'retrospective_retry' });
+    writeJsonAtomic(CONTROL_FILE, control);
+  }
   if (run.status === 'retrospective') {
     try {
       run.retrospective = await retrospect({ inheritedHandoff: run.inheritedHandoff, evidence: runEvidence(index, memory) });
