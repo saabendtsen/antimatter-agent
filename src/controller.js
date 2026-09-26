@@ -119,31 +119,57 @@ function publish(control, update = {}) {
 }
 
 // The public screenshot and page text come from the harness's own observation, never from a player tool.
-async function publicView(browser, index, round) {
+// At a round end the same observation is logged as round_final_observation for the retrospective; a
+// failed capture is logged as round_final_observation_error and the run continues.
+async function publicView(browser, index, round, { roundEnd = false } = {}) {
+  let pageText;
   try {
-    const pageText = (await browser.observe()).text;
-    fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-    await browser.screenshot(path.join(PUBLIC_DIR, 'screen.png'));
-    return { pageText, screenshot: `screen.png?v=${Date.now()}`, ...gameMetrics(pageText) };
+    const observation = await browser.observe();
+    pageText = observation.text;
+    if (roundEnd) log(index, { type: 'round_final_observation', round, text: pageText.slice(0, 1800), controls: observation.controls.length });
   } catch (error) {
-    log(index, { type: 'browser_error', round, message: error.message });
+    log(index, { type: roundEnd ? 'round_final_observation_error' : 'browser_error', round, message: error.message });
     return { pageText: '', screenshot: null, antimatter: null, production: null };
   }
+  let screenshot = null;
+  try {
+    fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+    await browser.screenshot(path.join(PUBLIC_DIR, 'screen.png'));
+    screenshot = `screen.png?v=${Date.now()}`;
+  } catch (error) { log(index, { type: 'browser_error', round, message: error.message }); }
+  return { pageText, screenshot, ...gameMetrics(pageText) };
 }
 
-function runEvidence(index, memory) {
-  const events = readEvents(eventsFile(index));
+// Pre-pilot run 1's retrospective missed its final second Dimension Boost: it saw each round's opening
+// page and the first 350 characters of its last click, but not the page the round ended on. Each round
+// now also carries the harness's round-end observation, or the latest visible page the round recorded
+// if that capture failed. Only the most recent rounds are kept, so the retrospective prompt stays well
+// inside the local context window even for a 480-round soak.
+export const EVIDENCE_LIMITS = { rounds: 30, finalStateCharacters: 1500, errorsPerRound: 5 };
+const PLAYER_BROWSER_ACTIONS = ['click', 'scroll', 'back', 'home'];
+
+export function conciseVisibleText(text, max = EVIDENCE_LIMITS.finalStateCharacters) {
+  return safePublicText(String(text ?? '').replace(/\s+/g, ' ').trim(), max);
+}
+
+export function retrospectiveEvidence(events, memory) {
   const rounds = new Map();
   for (const event of events) {
     if (!Number.isInteger(event.round)) continue;
-    if (!rounds.has(event.round)) rounds.set(event.round, { number: event.round });
+    if (!rounds.has(event.round)) rounds.set(event.round, { number: event.round, browserActions: 0 });
     const item = rounds.get(event.round);
-    if (event.type === 'round_observation') item.start = safePublicText(event.text, 350);
-    if (event.type === 'browser' && event.action !== 'inspect') {
+    if (event.type === 'round_observation') {
+      item.start = safePublicText(event.text, 350);
+      item.latest = { source: 'round_start', text: event.text };
+    }
+    if (event.type === 'browser' && event.observation) item.latest = { source: 'last_browser_result', text: event.observation.text };
+    if (event.type === 'browser' && PLAYER_BROWSER_ACTIONS.includes(event.action)) {
+      item.browserActions += 1;
       item.action = { kind: event.action, control: event.index,
         result: safePublicText(event.observation?.text, 350) };
     }
     if (event.type === 'round_end') {
+      item.status = event.incomplete ? 'incomplete' : 'complete';
       item.decision = safePublicText(event.summary, 500);
       item.requestedWaitSeconds = event.nextWakeSeconds;
       item.appliedWaitSeconds = event.appliedWakeSeconds;
@@ -151,12 +177,22 @@ function runEvidence(index, memory) {
       item.incomplete = Boolean(event.incomplete);
       if (event.incompleteReason) item.incompleteReason = event.incompleteReason;
     }
+    if (event.type === 'round_final_observation') item.final = { source: 'round_end', text: event.text };
+    if (event.type === 'round_final_observation_error') item.finalStateError = safePublicText(event.message, 250);
     if (['browser_error', 'model_error', 'harness_error', 'game_checkpoint_error'].includes(event.type)) {
       (item.errors ??= []).push(safePublicText(event.message, 250));
     }
   }
+  const all = [...rounds.values()].map(({ latest, final, errors, ...item }) => {
+    const seen = final ?? latest;
+    return { ...item, status: item.status ?? 'no_round_end',
+      finalState: seen ? { source: seen.source, text: conciseVisibleText(seen.text) } : null,
+      ...(errors ? { errors: errors.slice(-EVIDENCE_LIMITS.errorsPerRound) } : {}) };
+  });
   return {
-    rounds: [...rounds.values()],
+    totalRounds: all.length,
+    omittedEarlierRounds: Math.max(0, all.length - EVIDENCE_LIMITS.rounds),
+    rounds: all.slice(-EVIDENCE_LIMITS.rounds),
     memoryChanges: events.filter(event => ['memory_warm_write', 'memory_cold_write', 'memory_delete'].includes(event.type))
       .map(event => ({ round: event.round, kind: event.type, key: event.key,
         text: safePublicText(event.text, 250) })).slice(-30),
@@ -223,7 +259,7 @@ async function executeRun(control, index, previousHarness) {
       log(index, { type: 'round_end', round: number, ...outcome, appliedWakeSeconds });
       try { await browser.checkpoint(); log(index, { type: 'game_checkpoint', round: number }); }
       catch (error) { log(index, { type: 'game_checkpoint_error', round: number, message: error.message }); }
-      const view = await publicView(browser, index, number);
+      const view = await publicView(browser, index, number, { roundEnd: true });
       writeJsonAtomic(CONTROL_FILE, control);
       publish(control, { run: index + 1, round: number, phase: 'waiting', roundStartedAt: null, roundEndsBy: null,
         summary: outcome.summary, nextWakeAt: run.nextWakeAt, ...view });
@@ -255,7 +291,7 @@ async function executeRun(control, index, previousHarness) {
   }
   if (run.status === 'retrospective') {
     try {
-      run.retrospective = await retrospect({ inheritedHandoff: run.inheritedHandoff, evidence: runEvidence(index, memory),
+      run.retrospective = await retrospect({ inheritedHandoff: run.inheritedHandoff, evidence: retrospectiveEvidence(readEvents(eventsFile(index)), memory),
         onTranscript: entry => transcript(index, { phase: 'retrospective', ...entry }) });
       run.status = 'complete';
       log(index, { type: 'retrospective', ...run.retrospective });
