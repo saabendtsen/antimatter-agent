@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { GameBrowser } from './browser.js';
 import { GameMemory } from './memory.js';
 import { MIN_ROUND_SECONDS, playRound, retrospect, ROUND_LIMITS } from './agent.js';
+import { resumeRecord, sourceProvenance } from './provenance.js';
 import { appendEvent, readEvents, readJson, safePublicText, writeJsonAtomic } from './storage.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -164,17 +165,25 @@ function runEvidence(index, memory) {
   };
 }
 
-async function executeRun(control, index) {
+// Blocked runs wait for an operator and do no work, so only these statuses count as resumed.
+const RESUMABLE = ['active', 'retrospective', 'retrospective_failed'];
+
+async function executeRun(control, index, previousHarness) {
   const dir = runDir(index);
   fs.mkdirSync(dir, { recursive: true });
   let run = control.runs[index];
   if (!run) {
     run = { status: 'active', startedAt: new Date().toISOString(), round: 0,
-      inheritedHandoff: index ? control.runs[index - 1].retrospective.handoff : '', nextWakeAt: null };
+      inheritedHandoff: index ? control.runs[index - 1].retrospective.handoff : '', nextWakeAt: null,
+      harness: control.harness };
     control.runs.push(run);
     writeJsonAtomic(CONTROL_FILE, control);
-    log(index, { type: 'run_start', inheritedHandoff: run.inheritedHandoff });
+    log(index, { type: 'run_start', inheritedHandoff: run.inheritedHandoff, harness: run.harness });
     publish(control, { run: index + 1, round: null, phase: 'starting' });
+  } else if (RESUMABLE.includes(run.status)) {
+    // An existing unfinished run here always means a new controller process picked it up.
+    log(index, resumeRecord({ run, previousHarness, harness: control.harness,
+      lastEvent: readEvents(eventsFile(index)).at(-1) }));
   }
   const memory = new GameMemory(path.join(dir, 'memory.json'), event => log(index, { round: run.round, ...event }));
   const browser = new GameBrowser(path.join(dir, 'browser-profile'));
@@ -264,11 +273,14 @@ async function main() {
   try {
     const control = readJson(CONTROL_FILE, initialControl());
     if (control.mode !== MODE) throw new Error('Mode mismatch in saved controller state');
+    const previousHarness = control.harness ?? null;
+    control.harness = sourceProvenance({ cwd: ROOT });
+    writeJsonAtomic(CONTROL_FILE, control);
     publish(control);
     for (let index = 0; index < LIMITS.playthroughs; index++) {
       if (control.runs[index]?.status === 'complete') continue;
       if (index && control.runs[index - 1]?.status !== 'complete') break;
-      await executeRun(control, index);
+      await executeRun(control, index, previousHarness);
       if (control.runs[index].status !== 'complete') break;
     }
     control.status = control.runs.length === LIMITS.playthroughs && control.runs.every(run => run.status === 'complete') ? 'complete' : 'needs_attention';
