@@ -23,7 +23,7 @@ npm start
 
 `npm start` runs the three-playthrough pre-pilot. Each playthrough stops at 30 rounds or one hour. The controller keeps its state in ignored `state/prepilot/`; restarting it resumes the same playthrough and browser profile. The game browser stays open between rounds. During the pre-pilot, rounds start immediately after the prior round's checkpoint; the model's requested wake is logged but not applied. Use `node src/controller.js --pilot` only after reviewing the pre-pilot; the pilot uses a separate state directory, applies the model's requested wake time, and has a 24-hour limit.
 
-The run history stays under `state/`. `publication/latest.json` and `publication/screen.png` are the reduced public view. Start the publisher separately after the server viewer is deployed:
+The run history stays under `state/`. Each playthrough's `transcript.jsonl` records completed user, assistant, and tool-result messages with text, tool calls, token usage, and any thinking blocks Pi returns. Image payloads and provider metadata are omitted. The transcript is local and ignored by Git; it is not sent to the public viewer. Pi thinking is currently set to `off` for this pre-pilot, so a thinking block should not be expected. Earlier rounds cannot be reconstructed from the new transcript. `publication/latest.json` and `publication/screen.png` are the reduced public view. Start the publisher separately after the server viewer is deployed:
 
 ```cmd
 npm run publish

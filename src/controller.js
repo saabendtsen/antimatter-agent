@@ -19,6 +19,7 @@ function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function runDir(index) { return path.join(STATE_DIR, `run-${String(index + 1).padStart(2, '0')}`); }
 function eventsFile(index) { return path.join(runDir(index), 'events.jsonl'); }
 function log(index, event) { appendEvent(eventsFile(index), event); }
+function transcript(index, event) { appendEvent(path.join(runDir(index), 'transcript.jsonl'), event); }
 
 export function initialControl(mode = MODE) {
   return { mode, status: 'active', runs: [], createdAt: new Date().toISOString() };
@@ -143,7 +144,8 @@ async function executeRun(control, index) {
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
           round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds), immediateNextRound: MODE === 'prepilot',
-          onEvent: event => log(index, { round: number, ...event }) });
+          onEvent: event => log(index, { round: number, ...event }),
+          onTranscript: entry => transcript(index, { phase: 'play', round: number, ...entry }) });
       } catch (error) {
         outcome = { summary: `Harness error: ${error.message}`, nextWakeSeconds: 60, incomplete: true };
         log(index, { type: 'harness_error', round: number, message: error.stack ?? error.message });
@@ -193,7 +195,8 @@ async function executeRun(control, index) {
   }
   if (run.status === 'retrospective') {
     try {
-      run.retrospective = await retrospect({ inheritedHandoff: run.inheritedHandoff, evidence: runEvidence(index, memory) });
+      run.retrospective = await retrospect({ inheritedHandoff: run.inheritedHandoff, evidence: runEvidence(index, memory),
+        onTranscript: entry => transcript(index, { phase: 'retrospective', ...entry }) });
       run.status = 'complete';
       log(index, { type: 'retrospective', ...run.retrospective });
     } catch (error) {
