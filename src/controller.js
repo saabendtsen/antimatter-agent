@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GameBrowser } from './browser.js';
 import { GameMemory } from './memory.js';
-import { playRound, retrospect, ROUND_LIMITS } from './agent.js';
+import { MIN_ROUND_SECONDS, playRound, retrospect, ROUND_LIMITS } from './agent.js';
 import { appendEvent, readEvents, readJson, safePublicText, writeJsonAtomic } from './storage.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -37,6 +37,12 @@ function runDir(index) { return path.join(STATE_DIR, `run-${String(index + 1).pa
 function eventsFile(index) { return path.join(runDir(index), 'events.jsonl'); }
 function log(index, event) { appendEvent(eventsFile(index), event); }
 function transcript(index, event) { appendEvent(path.join(runDir(index), 'transcript.jsonl'), event); }
+
+// A round never outlasts the playthrough. Near the playthrough deadline, a round too short to keep
+// both some action time and the full finish period is not started; the playthrough ends instead.
+export function roundSeconds(remainingSeconds) {
+  return remainingSeconds < MIN_ROUND_SECONDS ? null : Math.min(ROUND_LIMITS.seconds, remainingSeconds);
+}
 
 export function initialControl(mode = MODE) {
   return { mode, status: 'active', runs: [], createdAt: new Date().toISOString() };
@@ -114,6 +120,7 @@ function runEvidence(index, memory) {
       item.appliedWaitSeconds = event.appliedWakeSeconds;
       item.contextUsage = event.contextUsage;
       item.incomplete = Boolean(event.incomplete);
+      if (event.incompleteReason) item.incompleteReason = event.incompleteReason;
     }
     if (['browser_error', 'model_error', 'harness_error', 'game_checkpoint_error'].includes(event.type)) {
       (item.errors ??= []).push(safePublicText(event.message, 250));
@@ -151,8 +158,8 @@ async function executeRun(control, index) {
         await sleep(Math.min(30000, Date.parse(run.nextWakeAt) - Date.now()));
         continue;
       }
-      const remainingSeconds = Math.floor((deadline - Date.now()) / 1000);
-      if (remainingSeconds < 15) break;
+      const maxSeconds = roundSeconds(Math.floor((deadline - Date.now()) / 1000));
+      if (!maxSeconds) break;
       run.round += 1;
       const number = run.round;
       log(index, { type: 'round_start', round: number });
@@ -160,7 +167,7 @@ async function executeRun(control, index) {
       let outcome;
       try {
         outcome = await playRound({ browser, memory, inheritedHandoff: run.inheritedHandoff,
-          round: number, maxSeconds: Math.min(ROUND_LIMITS.seconds, remainingSeconds), immediateNextRound: !CONFIG.appliesWake,
+          round: number, maxSeconds, immediateNextRound: !CONFIG.appliesWake,
           onEvent: event => log(index, { round: number, ...event }),
           onTranscript: entry => transcript(index, { phase: 'play', round: number, ...entry }) });
       } catch (error) {
