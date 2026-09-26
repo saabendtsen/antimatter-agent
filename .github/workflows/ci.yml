@@ -20,6 +20,9 @@ jobs:
           node-version: '24'
       - run: npm ci
       - run: npm test
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+      - run: npm run test:e2e
       - name: Build viewer image without publishing
         shell: bash
         run: |

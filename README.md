@@ -12,6 +12,7 @@ The existing `local-llm-worker` endpoint must be healthy, and Pi must have `loca
 npm ci
 npx playwright install chromium
 npm test
+npm run test:e2e
 npm run smoke
 npm start
 ```

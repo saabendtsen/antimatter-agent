@@ -74,8 +74,18 @@ function publish(control, current = {}) {
 }
 
 function runEvidence(index, memory) {
+  const kept = new Set(['round_start', 'round_observation', 'round_decision', 'round_end', 'browser',
+    'browser_error', 'model_error', 'harness_error', 'game_checkpoint_error',
+    'memory_warm_write', 'memory_cold_write', 'memory_read', 'memory_delete']);
   return {
-    events: readEvents(eventsFile(index)).filter(event => ['round_start', 'round_decision', 'round_end', 'browser_error', 'model_error', 'harness_error', 'game_checkpoint_error', 'memory_warm_write', 'memory_cold_write', 'memory_read', 'memory_delete'].includes(event.type)),
+    events: readEvents(eventsFile(index)).filter(event => kept.has(event.type)).map(event => ({
+      at: event.at, type: event.type, round: event.round,
+      summary: safePublicText(event.summary, 800), action: event.action, index: event.index,
+      visibleText: safePublicText(event.text ?? event.observation?.text, 650),
+      key: event.key, title: event.title, note: safePublicText(event.type?.startsWith('memory_') ? event.text : '', 800),
+      message: safePublicText(event.message, 350), nextWakeSeconds: event.nextWakeSeconds,
+      incomplete: event.incomplete,
+    })),
     finalWarmMemory: memory.warm(),
     finalColdNotes: memory.data.cold,
   };

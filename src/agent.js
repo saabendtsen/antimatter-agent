@@ -119,6 +119,7 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
   const timer = setTimeout(() => session.abort().catch(() => {}), maxSeconds * 1000);
   try {
     const start = await browser.observe();
+    onEvent({ type: 'round_observation', text: start.text.slice(0, 1800), controls: start.controls.length });
     const prompt = `Round ${round}. Previous playthrough handoff: ${inheritedHandoff || '(none)'}\nWarm memory (${memory.warm().length}/2200 characters): ${memory.warm() || '(empty)'}\nCold note index: ${JSON.stringify(memory.index())}\nCurrent visible game page: ${JSON.stringify(start)}\nChoose at most ONE click or navigation action this round, update notes if useful, then call finish_round with a short summary and wake time. You may choose to wait without clicking. Call finish_round promptly; do not keep inspecting after your action.`;
     await session.prompt(prompt);
     return { ...(finished ?? { summary: 'No finish_round call', nextWakeSeconds: 60, incomplete: true,
