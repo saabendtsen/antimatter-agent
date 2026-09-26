@@ -59,13 +59,22 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
   let session;
   const tools = [
     {
-      name: 'browser', label: 'Browser', description: 'Inspect the visible game page or click a numbered visible control. Inspect again after the page changes.',
-      parameters: Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('click'), Type.Literal('back'), Type.Literal('home')]), index: Type.Optional(Type.Integer({ minimum: 0 })) }),
+      name: 'browser', label: 'Browser', description: 'Inspect the visible game page, capture a screenshot if your model accepts images, or click a numbered visible control. Inspect again after the page changes.',
+      parameters: Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('screenshot'), Type.Literal('click'), Type.Literal('back'), Type.Literal('home')]), index: Type.Optional(Type.Integer({ minimum: 0 })) }),
       execute: async (_id, params) => {
         if (finished) return result({ error: 'Round already finished' });
         if (++toolCount > 6) return result({ error: 'Tool budget exhausted; call finish_round now' });
-        if (params.action !== 'inspect' && ++actionCount > 1) return result({ error: 'Action budget exhausted; call finish_round now' });
+        if (!['inspect', 'screenshot'].includes(params.action) && ++actionCount > 1) return result({ error: 'Action budget exhausted; call finish_round now' });
         try {
+          if (params.action === 'screenshot') {
+            if (!session?.model?.input?.includes('image')) return result({ error: 'This local model accepts text only. Use inspect for visible page text and controls.' });
+            const png = await browser.capture();
+            onEvent({ type: 'browser', action: 'screenshot' });
+            return { content: [
+              { type: 'text', text: 'Current visible game viewport.' },
+              { type: 'image', data: png.toString('base64'), mimeType: 'image/png' },
+            ], details: {} };
+          }
           const observation = params.action === 'click' ? await browser.click(params.index)
             : params.action === 'back' ? (await browser.back(), await browser.observe())
             : params.action === 'home' ? (await browser.home(), await browser.observe())
@@ -120,7 +129,8 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
   try {
     const start = await browser.observe();
     onEvent({ type: 'round_observation', text: start.text.slice(0, 1800), controls: start.controls.length });
-    const prompt = `Round ${round}. Previous playthrough handoff: ${inheritedHandoff || '(none)'}\nWarm memory (${memory.warm().length}/2200 characters): ${memory.warm() || '(empty)'}\nCold note index: ${JSON.stringify(memory.index())}\nCurrent visible game page: ${JSON.stringify(start)}\nChoose at most ONE click or navigation action this round, update notes if useful, then call finish_round with a short summary and wake time. You may choose to wait without clicking. Call finish_round promptly; do not keep inspecting after your action.`;
+    const imageHelp = session.model?.input?.includes('image') ? 'Screenshots are available through the browser tool.' : 'This model accepts text only; inspect provides visible page text and controls.';
+    const prompt = `Round ${round}. Previous playthrough handoff: ${inheritedHandoff || '(none)'}\nWarm memory (${memory.warm().length}/2200 characters): ${memory.warm() || '(empty)'}\nCold note index: ${JSON.stringify(memory.index())}\nCurrent visible game page: ${JSON.stringify(start)}\n${imageHelp}\nChoose at most ONE click or navigation action this round, update notes if useful, then call finish_round with a short summary and wake time. You may choose to wait without clicking. Call finish_round promptly; do not keep inspecting after your action.`;
     await session.prompt(prompt);
     return { ...(finished ?? { summary: 'No finish_round call', nextWakeSeconds: 60, incomplete: true,
       finalText: (session.getLastAssistantText() ?? '').slice(0, 1000) }), usage };

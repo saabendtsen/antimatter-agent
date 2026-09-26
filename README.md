@@ -4,6 +4,8 @@ A local-model experiment for playing [Antimatter Dimensions](https://ivark.githu
 
 The model uses Pi with only three tools: a Playwright-backed game browser, bounded warm/cold memory, and a round-finishing decision. Each round has a fresh agent session. A playthrough keeps its game save and notes. A successor playthrough receives only a handoff of up to 150 words.
 
+The browser tool exposes visible page text, controls, navigation, clicks, and screenshots. The current text-only local model uses text and controls; screenshot results are available when the configured model accepts images. The separate public viewer always receives screenshots.
+
 ## Run on the development PC
 
 The existing `local-llm-worker` endpoint must be healthy, and Pi must have `local-worker/local-worker` configured. By default the harness uses Pi's configured loopback endpoint. If the worker is already bound to the LAN address, set `ANTIMATTER_MODEL_URL` to its `/v1` URL and `ANTIMATTER_MODEL_KEY_FILE` to the existing key file outside Git. The key is loaded by the host process and is never a player tool or prompt. With Node.js 22 or later:

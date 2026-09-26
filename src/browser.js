@@ -86,6 +86,10 @@ export class GameBrowser {
     await this.page.screenshot({ path: file, fullPage: false });
   }
 
+  async capture() {
+    return this.page.screenshot({ type: 'png', fullPage: false });
+  }
+
   async checkpoint() {
     // Use the game's own Save game button. Browser storage may otherwise lag the
     // visible state by its 30-second autosave interval when a process restarts.
