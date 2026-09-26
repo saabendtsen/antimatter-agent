@@ -6,7 +6,7 @@ The model uses Pi with only three tools: a Playwright-backed game browser, bound
 
 ## Run on the development PC
 
-The existing `local-llm-worker` endpoint must be healthy on `127.0.0.1:8000`, and Pi must have `local-worker/local-worker` configured. With Node.js 22 or later:
+The existing `local-llm-worker` endpoint must be healthy, and Pi must have `local-worker/local-worker` configured. By default the harness uses Pi's configured loopback endpoint. If the worker is already bound to the LAN address, set `ANTIMATTER_MODEL_URL` to its `/v1` URL and `ANTIMATTER_MODEL_KEY_FILE` to the existing key file outside Git. The key is loaded by the host process and is never a player tool or prompt. With Node.js 22 or later:
 
 ```cmd
 npm ci

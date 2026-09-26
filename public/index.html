@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080c19">
+  <title>Antimatter Agent</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #080c19; color: #e8edff; }
+    body { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.05em; }
+    h2 { margin-top: 0; }
+    p { margin: .6rem 0; }
+    .muted { color: #a8b4d3; }
+    .intro { margin: 1rem 0 2rem; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(270px, 1fr); gap: 18px; }
+    .card { background: #121a30; border: 1px solid #2d3b5b; border-radius: 16px; padding: 20px; min-width: 0; }
+    .screen { display: block; width: 100%; border-radius: 8px; border: 1px solid #3b4a69; }
+    .pill { display: inline-block; border-radius: 999px; padding: 4px 10px; background: #193860; color: #aee3ff; font-weight: 650; }
+    .detail { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; font-size: .85rem; }
+    .run { margin-top: 18px; }
+    ol { padding-left: 1.5rem; }
+    li { padding: 8px 0; border-bottom: 1px solid #2d3b5b; }
+    time { color: #a8b4d3; font-size: .85rem; }
+    @media(max-width: 850px) { .grid { grid-template-columns: 1fr; } body { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="muted">A local model learning one game at a time</p>
+    <h1>Antimatter Agent</h1>
+    <p class="intro">A fresh mind each round. One game save per playthrough. A short lesson passed to the next run.</p>
+  </header>
+  <div class="grid">
+    <section class="card">
+      <h2>Current game</h2>
+      <p id="status" class="pill">Loading</p>
+      <p id="progress" class="muted"></p>
+      <img id="screen" class="screen" alt="Latest screenshot of the game" hidden>
+      <p class="muted">Latest decision</p>
+      <p id="decision">Waiting for the first round.</p>
+      <details><summary>Visible game text</summary><pre id="page-text" class="detail"></pre></details>
+    </section>
+    <section class="card">
+      <h2>Playthroughs</h2>
+      <div id="runs"></div>
+    </section>
+  </div>
+  <p class="muted" id="updated"></p>
+  <script>
+    const $ = id => document.getElementById(id);
+    function setText(element, text) { element.textContent = text || ''; }
+    function runCard(run) {
+      const section = document.createElement('section'); section.className = 'run';
+      const title = document.createElement('h3'); title.textContent = `Run ${run.number} · ${run.status} · ${run.rounds} rounds`; section.append(title);
+      const inherited = document.createElement('p'); inherited.textContent = `Inherited: ${run.inheritedHandoff || 'No handoff'}`; section.append(inherited);
+      if (run.retrospective) {
+        const assessment = document.createElement('p'); assessment.textContent = `Previous note: ${run.retrospective.inheritedAssessment} — ${run.retrospective.reason}`; section.append(assessment);
+        const outgoing = document.createElement('p'); outgoing.textContent = `Next handoff: ${run.retrospective.handoff}`; section.append(outgoing);
+      }
+      const details = document.createElement('details');
+      const summary = document.createElement('summary'); summary.textContent = `Decisions (${run.decisions.length})`; details.append(summary);
+      const list = document.createElement('ol');
+      for (const decision of [...run.decisions].reverse()) {
+        const item = document.createElement('li');
+        const time = document.createElement('time'); time.textContent = `${new Date(decision.at).toLocaleString()} · round ${decision.round}`;
+        const body = document.createElement('div'); body.textContent = decision.summary;
+        item.append(time, body); list.append(item);
+      }
+      details.append(list); section.append(details); return section;
+    }
+    async function refresh() {
+      try {
+        const response = await fetch(`./data/latest.json?v=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        setText($('status'), `${data.mode} · ${data.status}`);
+        setText($('progress'), `Run ${data.current.run ?? '—'} · round ${data.current.round ?? '—'}${data.current.nextWakeAt ? ' · next wake ' + new Date(data.current.nextWakeAt).toLocaleTimeString() : ''}`);
+        setText($('decision'), data.current.summary || 'Waiting for the first round.');
+        setText($('page-text'), data.current.pageText);
+        if (data.current.screenshot) { $('screen').src = `./data/${data.current.screenshot}`; $('screen').hidden = false; }
+        const runs = $('runs'); runs.replaceChildren(...data.runs.map(runCard));
+        setText($('updated'), `Last update: ${new Date(data.updatedAt).toLocaleString()}`);
+      } catch (error) { setText($('status'), 'Viewer waiting for data'); setText($('updated'), error.message); }
+    }
+    refresh(); setInterval(refresh, 30000);
+  </script>
+</body>
+</html>
