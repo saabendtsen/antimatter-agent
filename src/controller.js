@@ -76,7 +76,7 @@ function publicHistory(control, runEvents) {
     rounds: run.round,
     durationSeconds: run.endedAt ? Math.round((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000) : null,
     infinityClaimed: Boolean(run.infinityClaimed),
-    summary: safePublicText(runEvents(index).filter(e => e.type === 'round_end').at(-1)?.summary, 1000),
+    summary: safePublicText(roundSummary(runEvents(index).filter(e => e.type === 'round_end').at(-1)?.summary), 1000),
     inheritedHandoff: safePublicText(run.inheritedHandoff, 1200),
     retrospective: run.retrospective ? {
       inheritedAssessment: run.retrospective.inheritedAssessment,
@@ -85,7 +85,7 @@ function publicHistory(control, runEvents) {
     } : null,
     decisions: runEvents(index)
       .filter(e => e.type === 'round_end')
-      .map(e => ({ at: e.at, round: e.round, summary: safePublicText(e.summary, 1000),
+      .map(e => ({ at: e.at, round: e.round, summary: safePublicText(roundSummary(e.summary), 1000),
         requestedWakeSeconds: e.nextWakeSeconds, appliedWakeSeconds: e.appliedWakeSeconds,
         contextUsage: e.contextUsage ?? null, incomplete: Boolean(e.incomplete) })),
   }));
@@ -125,6 +125,11 @@ function publish(control, update = {}) {
 // A harness failure's message and stack can name local paths, the model URL or endpoint. They go only
 // to the private harness_error event; the round's public summary stays generic.
 export const HARNESS_ERROR_SUMMARY = 'Harness error; the round stopped early. Details are in the private run log.';
+// Round ends logged before HARNESS_ERROR_SUMMARY existed carried 'Harness error: <raw message>', which
+// can name the same paths and URLs. Those are read back as the generic summary; the log is unchanged.
+export function roundSummary(summary) {
+  return typeof summary === 'string' && summary.startsWith('Harness error:') ? HARNESS_ERROR_SUMMARY : summary;
+}
 export function harnessFailure(error, round) {
   return { outcome: { summary: HARNESS_ERROR_SUMMARY, nextWakeSeconds: 60, incomplete: true },
     event: { type: 'harness_error', round, message: error?.stack ?? error?.message ?? String(error) } };
@@ -182,7 +187,7 @@ export function retrospectiveEvidence(events, memory) {
     }
     if (event.type === 'round_end') {
       item.status = event.incomplete ? 'incomplete' : 'complete';
-      item.decision = safePublicText(event.summary, 500);
+      item.decision = safePublicText(roundSummary(event.summary), 500);
       item.requestedWaitSeconds = event.nextWakeSeconds;
       item.appliedWaitSeconds = event.appliedWakeSeconds;
       item.contextUsage = event.contextUsage;
@@ -322,14 +327,15 @@ async function main() {
   try {
     const control = readJson(CONTROL_FILE, initialControl());
     if (control.mode !== MODE) throw new Error('Mode mismatch in saved controller state');
-    const previousHarness = control.harness ?? null;
-    control.harness = sourceProvenance({ cwd: ROOT });
-    writeJsonAtomic(CONTROL_FILE, control);
-    // Recover torn final lines from a crash during appendEvent before any event log is read.
+    // Recover torn final lines from a crash during appendEvent before any event log is read, and before
+    // control.harness changes: a malformed log that stops startup must not replace the previous harness.
     control.runs.forEach((run, index) => {
       const recovered = recoverEventLog(eventsFile(index));
       if (recovered) log(index, { type: 'event_log_recovered', ...recovered });
     });
+    const previousHarness = control.harness ?? null;
+    control.harness = sourceProvenance({ cwd: ROOT });
+    writeJsonAtomic(CONTROL_FILE, control);
     publish(control);
     for (let index = 0; index < LIMITS.playthroughs; index++) {
       if (control.runs[index]?.status === 'complete') continue;

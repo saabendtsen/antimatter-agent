@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gameMetrics, HARNESS_ERROR_SUMMARY, harnessFailure, publicCurrent, publicState } from '../src/controller.js';
+import { gameMetrics, HARNESS_ERROR_SUMMARY, harnessFailure, publicCurrent, publicState, retrospectiveEvidence } from '../src/controller.js';
 
 // The public state left over when pre-pilot run 3 started on 2026-09-26: run 2's last round-end view.
 const run2Round7 = { run: 2, round: 7, phase: 'waiting', summary: 'Saved for tickspeed.', pageText: 'You have 5 K antimatter.',
@@ -80,4 +80,25 @@ test('a harness failure keeps its paths, model URL and endpoint out of the publi
     assert.ok(!published.includes(secret), `public state leaked ${secret}`);
   }
   assert.ok(published.includes(HARNESS_ERROR_SUMMARY));
+});
+
+test('an old-format harness error summary is read back as the generic summary', () => {
+  const oldSummary = 'Harness error: fetch failed for http://192.168.1.50:8081/v1/chat/completions at C:\Dev\private-checkout\state\soak\run-01';
+  const events = [{ at: '2026-09-27T10:00:00.000Z', type: 'round_start', round: 3 },
+    { at: '2026-09-27T10:00:01.000Z', type: 'round_end', round: 3, summary: oldSummary, nextWakeSeconds: 60, appliedWakeSeconds: 60, incomplete: true },
+    { at: '2026-09-27T10:01:00.000Z', type: 'round_start', round: 4 },
+    { at: '2026-09-27T10:01:01.000Z', type: 'round_end', round: 4, summary: 'Harness error was mentioned; bought tickspeed.', nextWakeSeconds: 30, appliedWakeSeconds: 30 }];
+  const state = control([{ status: 'active', round: 4, startedAt: '2026-09-27T09:00:00.000Z', inheritedHandoff: '' }]);
+  const published = publicState(state, {}, {}, () => events);
+  const evidence = retrospectiveEvidence(events, { warm: () => '', data: { cold: {} } });
+  for (const exposed of [JSON.stringify(published), JSON.stringify(evidence)]) {
+    for (const secret of ['192.168.1.50', '8081', '/v1/chat', 'private-checkout', 'C:\\Dev']) {
+      assert.ok(!exposed.includes(secret), `leaked ${secret}`);
+    }
+  }
+  assert.equal(published.runs[0].decisions[0].summary, HARNESS_ERROR_SUMMARY);
+  assert.equal(evidence.rounds[0].decision, HARNESS_ERROR_SUMMARY);
+  assert.equal(published.runs[0].summary, 'Harness error was mentioned; bought tickspeed.', 'normal summaries are unchanged');
+  assert.equal(evidence.rounds[1].decision, 'Harness error was mentioned; bought tickspeed.');
+  assert.equal(events[1].summary, oldSummary, 'the event log itself is not rewritten');
 });
