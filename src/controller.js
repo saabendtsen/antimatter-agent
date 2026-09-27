@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { GameBrowser } from './browser.js';
 import { GameMemory } from './memory.js';
 import { MIN_ROUND_SECONDS, playRound, retrospect, ROUND_LIMITS } from './agent.js';
+import { errorCategory } from './errors.js';
 import { resumeRecord, sourceProvenance } from './provenance.js';
 import { appendEvent, readEvents, readJson, recoverEventLog, safePublicText, writeJsonAtomic } from './storage.js';
 
@@ -163,23 +164,6 @@ export function conciseVisibleText(text, max = EVIDENCE_LIMITS.finalStateCharact
   return safePublicText(String(text ?? '').replace(/\s+/g, ' ').trim(), max);
 }
 
-// The retrospective's reason and handoff are published, so it sees an error only as its event type and a
-// stable category. Raw messages can carry stacks, local paths, the model URL or endpoint details; they
-// stay in the private events.jsonl.
-const ERROR_CATEGORIES = [
-  ['control_unavailable', /Control missing or disabled/],
-  ['off_game_blocked', /Off-game (link|navigation) blocked/],
-  ['save_notice_missing', /"Game saved" notice/],
-  ['browser_closed', /(page|context|browser) has been closed|Target closed/i],
-  ['timeout', /timeout|timed out/i],
-  ['connection', /ECONN|ENOTFOUND|EAI_AGAIN|fetch failed|socket hang up|network/i],
-  ['aborted', /abort/i],
-];
-export function errorCategory(message) {
-  const text = String(message ?? '');
-  return ERROR_CATEGORIES.find(([, pattern]) => pattern.test(text))?.[0] ?? 'other';
-}
-
 export function retrospectiveEvidence(events, memory) {
   const rounds = new Map();
   for (const event of events) {
@@ -207,7 +191,7 @@ export function retrospectiveEvidence(events, memory) {
     }
     if (event.type === 'round_final_observation') item.final = { source: 'round_end', text: event.text };
     if (event.type === 'round_final_observation_error') item.finalStateError = errorCategory(event.message);
-    if (['browser_error', 'model_error', 'harness_error', 'game_checkpoint_error'].includes(event.type)) {
+    if (['browser_error', 'memory_error', 'model_error', 'harness_error', 'game_checkpoint_error'].includes(event.type)) {
       (item.errors ??= []).push({ kind: event.type, category: errorCategory(event.message) });
     }
   }

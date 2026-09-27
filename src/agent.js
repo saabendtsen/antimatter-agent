@@ -7,6 +7,7 @@ import {
 import { wordCount } from './storage.js';
 import { ACTION_CONTEXT_FRACTION, contextCeiling, contextReport } from './context.js';
 import { transcriptMessage } from './transcript.js';
+import { errorCategory } from './errors.js';
 
 const SYSTEM = `You play Antimatter Dimensions in a browser. The objective is to reach the first Infinity.
 You are learning the game through its visible interface. You have no web search, shell, files, source code, or hidden game state.
@@ -152,7 +153,10 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
           onEvent({ type: 'browser', action: params.action, index: params.index ?? null, observation: { text: observation.text.slice(0, 1800), controls: observation.controls.length } });
           return result({ ...observation, remainingBrowserActions: Math.max(0, ROUND_LIMITS.browserActions - actionCount), secondsLeftForActions: actionSecondsLeft(),
             nextStep: actionCount >= ROUND_LIMITS.browserActions ? 'Call finish_round now.' : 'You may act again, manage notes, or finish this round.' });
-        } catch (error) { onEvent({ type: 'browser_error', message: error.message }); return result({ error: error.message }); }
+        } catch (error) {
+          onEvent({ type: 'browser_error', action: params.action, message: error.message, stack: error.stack });
+          return result({ error: 'Browser action failed', category: errorCategory(error.message) });
+        }
       },
     },
     {
@@ -173,7 +177,10 @@ export async function playRound({ browser, memory, inheritedHandoff, round, maxS
           if (params.operation === 'write-cold') memory.put(params.key, params.title ?? '', params.text ?? '');
           if (params.operation === 'delete-cold') memory.delete(params.key);
           return result({ ok: true, warmCharacters: memory.warm().length });
-        } catch (error) { return result({ error: error.message }); }
+        } catch (error) {
+          onEvent({ type: 'memory_error', operation: params.operation, message: error.message, stack: error.stack });
+          return result({ error: 'Memory operation failed', category: errorCategory(error.message) });
+        }
       },
     },
     {
