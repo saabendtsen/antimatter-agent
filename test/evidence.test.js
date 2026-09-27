@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { retrospectivePrompt } from '../src/agent.js';
-import { EVIDENCE_LIMITS, retrospectiveEvidence } from '../src/controller.js';
+import { EVIDENCE_LIMITS, harnessFailure, retrospectiveEvidence } from '../src/controller.js';
 
 const memory = { warm: () => 'Buy dimensions in order.', data: { cold: {} } };
 
@@ -64,8 +64,8 @@ test('an incomplete round keeps its latest visible page and states why the round
   assert.equal(first.browserActions, 1);
   assert.deepEqual(first.finalState, { source: 'last_browser_result', text: first.finalState.text });
   assert.match(first.finalState.text, /You have 7\.00 antimatter\..*Dimension Boost \(1\)/);
-  assert.match(first.finalStateError, /browser has been closed/);
-  assert.deepEqual(first.errors, ['Target page, context or browser has been closed']);
+  assert.equal(first.finalStateError, 'browser_closed');
+  assert.deepEqual(first.errors, [{ kind: 'game_checkpoint_error', category: 'browser_closed' }]);
   assert.equal(second.status, 'no_round_end');
   assert.equal(second.finalState.source, 'round_start');
   assert.match(second.finalState.text, /You have 8\.00 antimatter\./);
@@ -97,4 +97,33 @@ test('retrospective evidence keeps at most 30 recent rounds with concise pages, 
   // About 4 characters per token: the worst-case prompt stays near a third of the 120k-token window,
   // leaving room for the system prompt, bounded notes and the reply.
   assert.ok(retrospectivePrompt({ inheritedHandoff: 'x', evidence }).length < 160000);
+});
+
+test('the retrospective sees error kinds and categories, never raw messages, paths, URLs or stacks', () => {
+  const error = new Error('request to http://192.168.1.50:8080/v1/chat/completions failed, reason: connect ECONNREFUSED 192.168.1.50:8080');
+  error.stack = `${error.message}\n    at run (C:\\Users\\someone\\secret-dir\\src\\agent.js:212:9)\n    at /home/someone/private/controller.js:300:5`;
+  const events = [
+    { type: 'round_start', round: 4 },
+    { type: 'round_observation', round: 4, text: dimensionsPage(0), controls: 40 },
+    harnessFailure(error, 4).event,
+    { type: 'model_error', round: 4, stopReason: 'error', message: 'fetch failed at http://192.168.1.50:8080/v1' },
+    { type: 'browser_error', round: 4, message: 'Control missing or disabled; inspect the page again' },
+    { type: 'round_final_observation_error', round: 4, message: 'page.evaluate: Timeout 5000ms exceeded at C:\\Users\\someone\\secret-dir' },
+    { type: 'game_checkpoint_error', round: 4, message: 'Unexpected thing in /home/someone/private' },
+    { type: 'round_end', round: 4, summary: 'Harness error', incomplete: true },
+  ];
+  assert.match(events[2].message, /secret-dir/, 'the private event keeps the complete error');
+  const evidence = retrospectiveEvidence(events, memory);
+  const serialized = JSON.stringify(evidence) + retrospectivePrompt({ inheritedHandoff: '', evidence });
+  for (const leak of ['192.168.1.50', '8080', 'http://', 'secret-dir', 'someone', 'C:\\', '/home/', 'agent.js', 'ECONNREFUSED', '    at ']) {
+    assert.ok(!serialized.includes(leak), `evidence must not contain ${leak}`);
+  }
+  const [round] = evidence.rounds;
+  assert.deepEqual(round.errors, [
+    { kind: 'harness_error', category: 'connection' },
+    { kind: 'model_error', category: 'connection' },
+    { kind: 'browser_error', category: 'control_unavailable' },
+    { kind: 'game_checkpoint_error', category: 'other' },
+  ]);
+  assert.equal(round.finalStateError, 'timeout');
 });
