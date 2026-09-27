@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gameMetrics, publicCurrent } from '../src/controller.js';
+import { gameMetrics, HARNESS_ERROR_SUMMARY, harnessFailure, publicCurrent, publicState } from '../src/controller.js';
 
 // The public state left over when pre-pilot run 3 started on 2026-09-26: run 2's last round-end view.
 const run2Round7 = { run: 2, round: 7, phase: 'waiting', summary: 'Saved for tickspeed.', pageText: 'You have 5 K antimatter.',
@@ -58,3 +58,26 @@ test('game metrics are read from visible page text', () => {
   assert.deepEqual(gameMetrics(''), { antimatter: null, production: null });
 });
 
+
+test('a harness failure keeps its paths, model URL and endpoint out of the public state', () => {
+  const secretPath = 'C:\Dev\secret-checkout\state\soak\run-01\browser-profile';
+  const secretUrl = 'http://10.20.30.40:8081/v1/chat/completions';
+  const error = new Error(`fetch failed for ${secretUrl} while opening ${secretPath}`);
+  error.stack = `${error.message}\n    at playRound (${secretPath}\agent.js:12:3)`;
+  const failure = harnessFailure(error, 5);
+  assert.equal(failure.event.type, 'harness_error');
+  assert.match(failure.event.message, /10\.20\.30\.40:8081/, 'the private event keeps the full details');
+  assert.match(failure.event.message, /secret-checkout/);
+  assert.equal(failure.outcome.summary, HARNESS_ERROR_SUMMARY);
+  assert.equal(failure.outcome.incomplete, true);
+
+  const events = [{ at: '2026-09-27T10:00:00.000Z', type: 'round_start', round: 5 }, failure.event,
+    { at: '2026-09-27T10:00:01.000Z', type: 'round_end', round: 5, ...failure.outcome, appliedWakeSeconds: 60 }];
+  const state = control([{ status: 'active', round: 5, startedAt: '2026-09-27T09:00:00.000Z', inheritedHandoff: '' }]);
+  const published = JSON.stringify(publicState(state, { run: 1, round: 5, phase: 'waiting', summary: failure.outcome.summary },
+    {}, () => events));
+  for (const secret of ['10.20.30.40', '8081', '/v1/chat', 'secret-checkout', 'browser-profile', 'fetch failed', 'agent.js']) {
+    assert.ok(!published.includes(secret), `public state leaked ${secret}`);
+  }
+  assert.ok(published.includes(HARNESS_ERROR_SUMMARY));
+});
